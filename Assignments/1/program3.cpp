@@ -81,10 +81,14 @@ int main(int argc, char** argv){
   cv::minMaxLoc( Base, &minVal, &maxVal, &minLoc, &maxLoc );
   std::cout<<maxVal<<" "<<minVal<<"\n";
   double compressionfactor = (0.25)/(maxVal - minVal);
-  cv::Mat LogOutput = (Base*compressionfactor + Detail - maxVal*compressionfactor);
+  cv::Mat LogOutput = (Base*compressionfactor + Detail - 4*maxVal*compressionfactor);
   cv::Mat Output;
   cv::exp(LogOutput,Output);
   // cv::pow(LogOutput,10.0,Output);
+
+  cv::minMaxLoc(Luminance, &minVal, &maxVal, &minLoc, &maxLoc );
+  std::cout<<maxVal<<" "<<minVal<<"\n";
+
   cv::Mat coloured(image.rows,image.cols,CV_32FC3);
   for(int r = 0 ; r<image.rows;r++){
     for (int c = 0; c < image.cols; c++){
@@ -95,7 +99,7 @@ int main(int argc, char** argv){
       coloured.at<cv::Vec3f>(r,c)[2] = 250*(std::pow(image.at<cv::Vec3f>(r,c)[2]/Luminance.at<float>(r,c),s)*Output.at<float>(r,c));
     }
   }
-
+  coloured = 5*gamma(coloured);
   // std::cout<<coloured;
   cv::namedWindow( "Window",CV_WINDOW_FREERATIO);
   cv::imshow( "Window", Output);

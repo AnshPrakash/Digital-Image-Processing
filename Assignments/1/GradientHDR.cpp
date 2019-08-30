@@ -38,14 +38,14 @@ cv::Mat GradAttentuation(cv::Mat logI){
     cv::Mat scaling[level];
     cv::Mat phi[level];
     for(int l = 0 ; l<level ; l++){
-        Sobel(Blurred, gradx, CV_32FC1, 1, 0,3);
-        Sobel(Blurred, grady, CV_32FC1, 0, 1,3);
+        Sobel(Blurred, gradx, CV_32FC1, 1, 0, 3);
+        Sobel(Blurred, grady, CV_32FC1, 0, 1, 3);
         cv::Mat gradi(gradx.rows,gradx.cols,CV_32FC1);
         cv::Mat scalingMat(gradx.rows,gradx.cols,CV_32FC1);
         for(int r = 0;r<gradi.rows;r++){
             for(int c = 0 ;c<gradi.cols; c++){
                 gradi.at<float>(r,c) = std::pow(gradx.at<float>(r,c)*gradx.at<float>(r,c) + grady.at<float>(r,c)*grady.at<float>(r,c),0.5);
-                scalingMat.at<float>(r,c) = std::pow(gradi.at<float>(r,c)/0.1,-0.2);
+                scalingMat.at<float>(r,c) =  (gradi.at<float>(r,c)<0.001) ? 1:std::pow(gradi.at<float>(r,c)/0.1,-0.2);
                 // G.at<float>(r,c) = scaling.at<float>(r,c)*grad.at<float>(r,c);
             }
         }    
@@ -65,7 +65,50 @@ cv::Mat GradAttentuation(cv::Mat logI){
     return(phi[0]);
 }
 
+void recenter(cv::Mat& M){
+    int centerX = M.cols/2;
+    int centerY = M.rows/2;
+    cv::Mat q1(M,cv::Rect(0,0,centerX,centerY));
+    cv::Mat q2(M,cv::Rect(centerX,0,centerX,centerY));
+    cv::Mat q3(M,cv::Rect(0,centerY,centerX,centerY));
+    cv::Mat q4(M,cv::Rect(centerX,centerY,centerX,centerY));
+    cv::Mat swapMap;
+    q1.copyTo(swapMap);
+    q4.copyTo(q1);
+    swapMap.copyTo(q4);
+    q2.copyTo(swapMap);
+    q3.copyTo(q2);
+    swapMap.copyTo(q3);
+}
 
+void showdft(const cv::Mat& M){
+    cv::Mat SpArr[2];
+    cv::split(M,SpArr);
+    cv::Mat Mag;
+    cv::magnitude(SpArr[0],SpArr[1],Mag);
+    Mag += cv::Scalar::all(1);
+    cv::log(Mag,Mag);
+    cv::normalize(Mag,Mag,0,1,CV_MINMAX);
+    recenter(Mag);
+    cv::namedWindow( "DFT",CV_WINDOW_FREERATIO);
+    cv::imshow("DFT",Mag);
+    // cv::normalize(Mag,Mag,0,1,CV_MINMAX);
+    cv::waitKey(0); 
+    cv::destroyAllWindows();
+}
+
+void dftImage(const cv::Mat& G,cv::Mat& complexI){
+    int m = cv::getOptimalDFTSize( G.rows );
+    int n = cv::getOptimalDFTSize( G.cols );
+    // cv::normalize(G,G,0,1,CV_MINMAX);
+    cv::Mat padded;
+    cv::copyMakeBorder(G, padded, 0, m - G.rows, 0, n - G.cols,cv::BORDER_CONSTANT, cv::Scalar::all(0));
+    // std::cout<<G;
+    cv::Mat planes[] = {cv::Mat_<float>(padded), cv::Mat::zeros(padded.size(), CV_32F)};
+    cv::merge(planes, 2, complexI);         // Add to the expanded another plane with zero
+    cv::dft(complexI, complexI,cv::DFT_COMPLEX_OUTPUT);
+
+}
 
 int main(int argc, char** argv){
     cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
@@ -85,7 +128,7 @@ int main(int argc, char** argv){
         }
     }
     cv::Mat logL;
-    cv::log(1+Luminance, logL);
+    cv::log(cv::Scalar::all(1)+ Luminance, logL);
     cv::Mat Blurred;
     cv::Mat gradx,grady;
     cv::GaussianBlur(logL,Blurred,cv::Size(0,0),0.3,0.3);
@@ -100,19 +143,40 @@ int main(int argc, char** argv){
             G.at<float>(r,c) = phi.at<float>(r,c)*grad.at<float>(r,c);
         }
     }
+    cv::Mat divG,divGx,divGy;
+    Sobel(G, divGx, CV_32FC1, 1, 0, 3);
+    Sobel(G, divGy, CV_32FC1, 0, 1, 3);
+    divG = divGx + divGy;
+    cv::Mat complexI;
+    dftImage(divG,complexI);
+    
+
+    for(int r = 0;r<complexI.rows;r++){
+        for(int c = 0 ;c<complexI.cols; c++){
+            double p,q;
+            p = r - complexI.rows/2;
+            q = c - complexI.cols/2;
+            double Lx,Ly;
+            Lx = complexI.rows; Ly = complexI.cols;
+            double k = 4*M_PI*M_PI*((p*p)/(Ly*Ly) + ((q*q)/(Lx*Lx) ));
+            if(abs(k)<0.0001) continue;
+            complexI.at<cv::Vec2f>(r,c)[0] = complexI.at<cv::Vec2f>(r,c)[0]/k;
+            complexI.at<cv::Vec2f>(r,c)[1] = complexI.at<cv::Vec2f>(r,c)[1]/k;
+        }
+    }
+    cv::Mat FinalImage;
+    cv::dft(complexI,FinalImage,cv::DFT_REAL_OUTPUT|cv::DFT_INVERSE|cv::DFT_SCALE);
+    
 
 
-
-   
-
-    cv::namedWindow( "1",CV_WINDOW_FREERATIO);
-    cv::imshow( "1", gradx);
     cv::namedWindow( "2",CV_WINDOW_FREERATIO);
-    cv::imshow( "2", grady);
+    cv::imshow( "2", grad);
     // cv::namedWindow( "3",CV_WINDOW_FREERATIO);
     // cv::imshow( "3", scaling);
-    cv::namedWindow( "4",CV_WINDOW_FREERATIO);
-    cv::imshow( "4", G);
+    cv::namedWindow( "3",CV_WINDOW_FREERATIO);
+    cv::imshow( "3", divG);
+    cv::namedWindow( "1",CV_WINDOW_FREERATIO);
+    cv::imshow( "1", FinalImage);
     // cv::imshow( "Display window", grady);
     // cv::imshow( "Display window", image);
 
