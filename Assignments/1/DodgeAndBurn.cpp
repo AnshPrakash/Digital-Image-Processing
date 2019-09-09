@@ -29,11 +29,24 @@ std::string type2str(int type) {
   return r;
 }
 
+// void clipping(cv::Mat &M ){
+//     for(int r = 0 ; r<M.rows;r++){
+//         for (int c = 0; c < M.cols; c++){
+//             for(int ch = 0;ch< M.channels();ch++){
+//                 if(M.at<cv::Vec3f>(r,c)[ch]>1) M.at<cv::Vec3f>(r,c)[ch] = 1;
+//             }
+//         }
+//     }
+// }
+
 void clipping(cv::Mat &M ){
     for(int r = 0 ; r<M.rows;r++){
         for (int c = 0; c < M.cols; c++){
-            for(int ch = 0;ch< M.channels();ch++){
-                if(M.at<cv::Vec3f>(r,c)[ch]>1) M.at<cv::Vec3f>(r,c)[ch] = 1;
+            if(M.at<float>(r,c)<0){
+                M.at<float>(r,c) = 0;
+            }
+            if(M.at<float>(r,c)>1){
+                M.at<float>(r,c) = 1;
             }
         }
     }
@@ -52,7 +65,7 @@ void plotHistogram(cv::Mat img){
     cv::minMaxLoc( bgr_planes[0], &minVal, &maxVal, &minLoc, &maxLoc );
 
     float range[] = { (float)minVal, (float)maxVal } ;
-    // float range[] = { 0, 255 } ;
+    // float range[] = { 0, 256 } ;
     const float* histRange = { range };
     bool uniform = true; bool accumulate = false;
     // cv::Mat b_hist, g_hist, r_hist;
@@ -82,24 +95,15 @@ void plotHistogram(cv::Mat img){
 
     for( int i = 1; i < histSize; i++ )
     {
-        for (int i = 0; i < img.channels(); i++){
-            cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(hist[i].at<float>(i-1)) ) ,
-                    cv::Point( bin_w*(i), hist_h - cvRound(hist[i].at<float>(i)) ),
-                    cv::Scalar( Bcolors[i], Gcolors[i], Rcolors[i]), 2, 8, 0  );
+        for (int j = 0; j < img.channels(); j++){
+            cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(hist[j].at<float>(i-1)) ) ,
+                    cv::Point( bin_w*(i), hist_h - cvRound(hist[j].at<float>(i))),
+                    cv::Scalar( Bcolors[j], Gcolors[j], Rcolors[j]), 2, 8, 0  );
         }
-            
-        // cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(b_hist.at<float>(i-1)) ) ,
-        //                 cv::Point( bin_w*(i), hist_h - cvRound(b_hist.at<float>(i)) ),
-        //                 cv::Scalar( 255, 0, 0), 2, 8, 0  );
-        // cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(g_hist.at<float>(i-1)) ) ,
-        //                 cv::Point( bin_w*(i), hist_h - cvRound(g_hist.at<float>(i)) ),
-        //                 cv::Scalar( 0, 255, 0), 2, 8, 0  );
-        // cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(r_hist.at<float>(i-1)) ) ,
-        //                 cv::Point( bin_w*(i), hist_h - cvRound(r_hist.at<float>(i)) ),
-        //                 cv::Scalar( 0, 0, 255), 2, 8, 0  );
     }
-
+    
     /// Display
+    // imwrite( "./DogeAndBurnImages/img.jpg",histImage );
     cv::namedWindow("calcHist Demo", CV_WINDOW_FREERATIO );
     cv::imshow("calcHist Demo", histImage );
     cv::waitKey(0);
@@ -168,7 +172,7 @@ int main(int argc, char** argv){
         Vi.push_back(response);
     }
     float epsilon = 0.05;
-    float phi = 80.0;
+    float phi = 8.0;
     s = 0.35;
 
     std::vector<cv::Mat> V(7);
@@ -192,13 +196,13 @@ int main(int argc, char** argv){
     }
 
 
-    
+    clipping(Ld);
     cv::Mat coloured(image.rows,image.cols,CV_32FC3);
     for(int r = 0 ; r<coloured.rows;r++){
         for (int c = 0; c < coloured.cols; c++){
             float Lin= Luminance.at<float>(r,c);
             // float Lin = L.at<float>(r,c);
-            int k = 250.0;
+            int k = 100.0;
             coloured.at<cv::Vec3f>(r,c)[0] = k*(float)((image.at<cv::Vec3f>(r,c)[0]/Lin)*Ld.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[1] = k*(float)((image.at<cv::Vec3f>(r,c)[1]/Lin)*Ld.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[2] = k*(float)((image.at<cv::Vec3f>(r,c)[2]/Lin)*Ld.at<float>(r,c));
@@ -208,16 +212,17 @@ int main(int argc, char** argv){
     if(image.rows>1000 || image.cols>1000) cv::resize(coloured,coloured,cv::Size(780,1000));
     if(image.rows>1000 || image.cols>1000) cv::resize(Ld,Ld,cv::Size(780,1000));
 
-    
     coloured = gamma(coloured);
-    clipping(coloured);
+    // image = gamma(image);
+    // plotHistogram(image);
+    // plotHistogram(coloured);
     cv::minMaxLoc( Ld, &minVal, &maxVal, &minLoc, &maxLoc );
     
     std::cout<<"MaxVal Ld " << maxVal<<"\n";
     std::cout<<"MinVal Ld" << minVal<<"\n";
     
     // plotHistogram(Ld);
-
+    // imwrite( "./DogeAndBurnImages/img.jpg",coloured*255 );
     cv::namedWindow( "4",CV_WINDOW_FREERATIO);
     // cv::imshow( "4", image);
     cv::imshow( "4", coloured);

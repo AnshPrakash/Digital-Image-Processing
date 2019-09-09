@@ -47,35 +47,116 @@ cv::Mat gamma(cv::Mat image){
 }
 
 
-cv::Mat LLenhancement(const cv::Mat& Luminance){
-    cv::Mat logL;
-    cv::log(1 + Luminance, logL);
-    logL = logL/cv::log(10);
-    double minVal; 
-    double maxVal; 
-    cv::Point minLoc; 
-    cv::Point maxLoc;
-
-    cv::minMaxLoc( logL, &minVal, &maxVal, &minLoc, &maxLoc );
-    logL = (logL - minVal)/(maxVal-minVal); //[0,b]
-    cv::Mat M(logL.rows,logL.cols,CV_32FC1);
-    // cv::exp(logL,M);
+void clipping(cv::Mat &M ){
     for(int r = 0 ; r<M.rows;r++){
         for (int c = 0; c < M.cols; c++){
-            M.at<float>(r,c) = std::pow(10.0,logL.at<float>(r,c));
+            if(M.at<float>(r,c)<0){
+                M.at<float>(r,c) = 0;
+            }
         }
     }
+}
 
-    cv::minMaxLoc( M, &minVal, &maxVal, &minLoc, &maxLoc );
+void plotHistogram(cv::Mat img){
+    std::vector<cv::Mat> bgr_planes;
+    cv::split( img, bgr_planes );
+    /// Establish the number of bins
+    int histSize = 256;
+
+    double minVal; 
+    double maxVal;
+    cv::Point minLoc; 
+    cv::Point maxLoc;
+    cv::minMaxLoc( bgr_planes[0], &minVal, &maxVal, &minLoc, &maxLoc );
+    float range[] = { (float)minVal, (float)maxVal } ;
+    // float range[] = { 0, 256 } ;
+    const float* histRange = { range };
+    bool uniform = true; bool accumulate = false;
+    // cv::Mat b_hist, g_hist, r_hist;
+
+    std::vector<cv::Mat> hist(img.channels());
+
+    /// Compute the histograms:
+    for (int i = 0; i < img.channels(); i++){
+        cv::calcHist( &bgr_planes[i], 1, 0, cv::Mat(), hist[i], 1, &histSize, &histRange, uniform, accumulate );
+    }
     
-    M = ((M - minVal)/(maxVal-minVal)) ;
+    
+    // Draw the histograms for B, G and R
+    int hist_w = 512; int hist_h = 400;
+    int bin_w = cvRound( (double) hist_w/histSize );
+    cv::Mat histImage( hist_h, hist_w, CV_8UC3, cv::Scalar( 0,0,0) );
+    /// Normalize the result to [ 0, histImage.rows ]
+
+    for (int i = 0; i < img.channels(); i++){
+        cv::normalize(hist[i], hist[i], 0, histImage.rows, cv::NORM_MINMAX, -1, cv::Mat() );
+    }
+    
+    /// Draw for each channel
+    std::vector<int>  Bcolors = {255,0,0};
+    std::vector<int>  Gcolors = {0,255,0};
+    std::vector<int>  Rcolors = {0,0,255};
+
+    for( int i = 1; i < histSize; i++ )
+    {
+        for (int j = 0; j < img.channels(); j++){
+            cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(hist[j].at<float>(i-1)) ) ,
+                    cv::Point( bin_w*(i), hist_h - cvRound(hist[j].at<float>(i))),
+                    cv::Scalar( Bcolors[j], Gcolors[j], Rcolors[j]), 2, 8, 0  );
+        }
+    }
+    
+    /// Display
+    cv::namedWindow("calcHist Demo", CV_WINDOW_FREERATIO );
+    cv::imshow("calcHist Demo", histImage );
+    cv::waitKey(0);
+    cv::destroyAllWindows();	
+}
+
+
+
+
+cv::Mat LinearReScale(const cv::Mat& Luminance,float shift){
+    // cv::Mat M(Luminance.rows,Luminance.cols,CV_32FC1);
+    cv::Mat M;
+    M = Luminance + shift;
+    // for(int r = 0 ; r<Luminance.rows;r++){
+    //       for (int c = 0; c < Luminance.cols; c++){
+    //           M.at<float>(r,c) = Luminance.at<float>(r,c) + shift;
+    //       }
+    //   }
     return(M);
+}
+
+cv::Mat LogReScale(const cv::Mat& Luminance,float shift){
+  cv::Mat logL;
+  cv::log(1 + Luminance, logL);
+  logL = logL/cv::log(10);
+  // double minVal; 
+  // double maxVal; 
+  // cv::Point minLoc; 
+  // cv::Point maxLoc;
+
+  // cv::minMaxLoc( logL, &minVal, &maxVal, &minLoc, &maxLoc );
+  // logL = (logL - minVal)/(maxVal-minVal); //[0,b]
+  logL = logL + shift;
+  cv::Mat M(logL.rows,logL.cols,CV_32FC1);
+  for(int r = 0 ; r<M.rows;r++){
+      for (int c = 0; c < M.cols; c++){
+          M.at<float>(r,c) = std::pow(10.0,logL.at<float>(r,c));
+      }
+  }
+  // cv::minMaxLoc( M, &minVal, &maxVal, &minLoc, &maxLoc );
+  
+  // M = ((M - minVal)/(maxVal-minVal));
+  return(M);
 }
 
 int main(int argc, char** argv){
     
     
     cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
+    image.convertTo(image,CV_32FC3);
     std::cout<<type2str(image.type())<<"\n";
 
     // image = image*1000;
@@ -91,14 +172,15 @@ int main(int argc, char** argv){
             Luminance.at<float>(r,c) = b*image.at<cv::Vec3f>(r,c)[0] + g*image.at<cv::Vec3f>(r,c)[1] + r*image.at<cv::Vec3f>(r,c)[2];
         }
     }
-    
-    cv::Mat M = LLenhancement(Luminance);
-
+    // std::cout<<Luminance;
+    // cv::Mat M = LLenhancement(Luminance);
+    cv::Mat M = LinearReScale(Luminance,3);
+    clipping(M);
     cv::Mat coloured(image.rows,image.cols,CV_32FC3);
     for(int r = 0 ; r<image.rows;r++){
         for (int c = 0; c < image.cols; c++){
             float Lin= Luminance.at<float>(r,c);
-            int k = 450;
+            int k = 1;
             coloured.at<cv::Vec3f>(r,c)[0] = k*(float)((image.at<cv::Vec3f>(r,c)[0]/Luminance.at<float>(r,c))*M.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[1] = k*(float)((image.at<cv::Vec3f>(r,c)[1]/Luminance.at<float>(r,c))*M.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[2] = k*(float)((image.at<cv::Vec3f>(r,c)[2]/Luminance.at<float>(r,c))*M.at<float>(r,c));
@@ -106,15 +188,43 @@ int main(int argc, char** argv){
     }
 
     coloured = gamma(coloured);
+    
+    
+    // image = gamma(image);
+    // plotHistogram(image);
+    // plotHistogram(coloured);
+    
+    // imwrite( "./LLReScaling/img.jpg",coloured*255 );
     // std::cout<<coloured;
-    cv::namedWindow( "Display window",CV_WINDOW_FREERATIO);
-    // cv::imshow( "Display window", M);
-    // cv::imshow( "Display window", Luminance);
-    // cv::imshow( "Display window", logL);
-    cv::imshow( "Display window", coloured);
-    // cv::imshow( "Display window", image);
+    // cv::namedWindow( "Display window",CV_WINDOW_AUTOSIZE);
 
+    
+    cv::namedWindow( "Linear Rescaling window",CV_WINDOW_FREERATIO);
+    cv::imshow( "Linear Rescaling window", coloured);
+    cv::waitKey(0); 
+    cv::destroyAllWindows();	
 
+    ///////////////////Log Rescaling////////////////////////////////////
+    M = LogReScale(Luminance,1.25);
+    clipping(M);
+    for(int r = 0 ; r<image.rows;r++){
+        for (int c = 0; c < image.cols; c++){
+            float Lin= Luminance.at<float>(r,c);
+            int k = 1;
+            coloured.at<cv::Vec3f>(r,c)[0] = k*(float)((image.at<cv::Vec3f>(r,c)[0]/Luminance.at<float>(r,c))*M.at<float>(r,c));
+            coloured.at<cv::Vec3f>(r,c)[1] = k*(float)((image.at<cv::Vec3f>(r,c)[1]/Luminance.at<float>(r,c))*M.at<float>(r,c));
+            coloured.at<cv::Vec3f>(r,c)[2] = k*(float)((image.at<cv::Vec3f>(r,c)[2]/Luminance.at<float>(r,c))*M.at<float>(r,c));
+        }
+    }
+    coloured = gamma(coloured);
+    if(image.rows>1000 || image.cols>1000) cv::resize(coloured,coloured,cv::Size(780,1000));
+    
+    // image = gamma(image);
+    // plotHistogram(image);
+    // plotHistogram(coloured);
+    imwrite( "./LLReScaling/img.jpg",coloured*255);
+    cv::namedWindow( "Log Rescaling",CV_WINDOW_FREERATIO);
+    cv::imshow( "Log Rescaling", coloured);
     cv::waitKey(0); 
     cv::destroyAllWindows();	
     return(0);
