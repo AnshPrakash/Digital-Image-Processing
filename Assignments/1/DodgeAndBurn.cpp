@@ -125,8 +125,13 @@ cv::Mat gamma(cv::Mat image){
   }
   return(ret);
 }
+// static float  sigma_0, sigma_1;
+// #define SIGMA_I(i)       (sigma_0 + ((float)i/8)*(sigma_1 - sigma_0))
+// #define S_I(i)           (exp (SIGMA_I(i)))
 
 int main(int argc, char** argv){
+    // sigma_0 = log(2);
+    // sigma_1 = log(43);
     cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
     image.convertTo(image,CV_32FC3);
     // plotHistogram(image);
@@ -160,40 +165,49 @@ int main(int argc, char** argv){
     float a = 0.72;
     cv::Mat L(image.rows,image.cols,CV_32FC1);
     L = (a*(Luminance)/logavg);
-    float s = 0.35; // 1/2*root(2)
     float alpha = 1.6;
-    std::vector<cv::Mat> Vi;
+    float s = 0.35; // 1/2*root(2)
 
+    std::vector<cv::Mat> Vi;
     // // Just 8 scales
     for (int i = 0; i < 8; i++){
         cv::Mat response;
-        cv::GaussianBlur(L,response,cv::Size(5,5),s,s);
+        // cv::GaussianBlur(L,response,cv::Size(0,0),S_I(i),S_I(i));
+        cv::GaussianBlur(L,response,cv::Size(0,0),s,s);
         s = alpha*s;
         Vi.push_back(response);
     }
-    float epsilon = 0.05;
+    float thershold = 0.05;
     float phi = 8.0;
     s = 0.35;
 
     std::vector<cv::Mat> V(7);
     for(int i = 0 ; i<7 ; i++){
-        V[i] = (Vi[i] - Vi[i+1])/(((std::pow(2,phi)*a) /(s*s)) + Vi[i] );
+        V[i] = (Vi[i] - Vi[i+1])/(((std::pow(2,phi)*a) /(s*s) )+ Vi[i] );
         s = alpha*s;
     }
     // cv::Mat selectScale(image.rows,image.cols,CV_32S);
     // selectScale = cv::Scalar(-1);
     cv::Mat Ld(image.rows,image.cols,CV_32FC1);
-
+    int arr[8];
+    arr[0 ] = 0;arr[1] = 0;arr[2] = 0;arr[3] = 0;arr[4] = 0;arr[5] = 0;arr[6] = 0;arr[7] = 0;
     for(int r = 0;r<image.rows;r++){
         for(int c = 0 ;c<image.cols; c++){
-            for(int sm = V.size()-1 ; sm>=0; sm-- ){
-                if( abs(V[sm].at<float>(r,c)) < epsilon || sm == 0 ){
+            for(int sm = 0; sm<V.size(); sm++ ){
+                if( fabs(V[sm].at<float>(r,c)) > thershold || sm == V.size()-1 ){
+                    // std::cout<<fabs(V[sm].at<float>(r,c))<<" , "<<sm<<"\n";
+                    arr[sm] += 1;
                     Ld.at<float>(r,c) = L.at<float>(r,c)/(1 + Vi[sm].at<float>(r,c));
                     break;
                 }
             }
         }
     }
+    // std::cout<<"_________\n";
+    // for(int i =0;i<8;i++){
+    //     std::cout<<arr[i]<<"\n";
+    // }
+    // std::cout<<"_________\n";
 
 
     clipping(Ld);
@@ -202,7 +216,7 @@ int main(int argc, char** argv){
         for (int c = 0; c < coloured.cols; c++){
             float Lin= Luminance.at<float>(r,c);
             // float Lin = L.at<float>(r,c);
-            int k = 100.0;
+            int k = 50.0;
             coloured.at<cv::Vec3f>(r,c)[0] = k*(float)((image.at<cv::Vec3f>(r,c)[0]/Lin)*Ld.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[1] = k*(float)((image.at<cv::Vec3f>(r,c)[1]/Lin)*Ld.at<float>(r,c));
             coloured.at<cv::Vec3f>(r,c)[2] = k*(float)((image.at<cv::Vec3f>(r,c)[2]/Lin)*Ld.at<float>(r,c));
@@ -222,10 +236,10 @@ int main(int argc, char** argv){
     std::cout<<"MinVal Ld" << minVal<<"\n";
     
     // plotHistogram(Ld);
-    // imwrite( "./DogeAndBurnImages/img.jpg",coloured*255 );
-    cv::namedWindow( "4",CV_WINDOW_FREERATIO);
+    imwrite( "./DogeAndBurnImages/img.jpg",coloured*255 );
+    cv::namedWindow( "DogeAndBurn",CV_WINDOW_FREERATIO);
     // cv::imshow( "4", image);
-    cv::imshow( "4", coloured);
+    cv::imshow( "DogeAndBurn", coloured);
     // cv::imshow( "4", Ld);
     cv::waitKey(0);
     cv::destroyAllWindows();	
