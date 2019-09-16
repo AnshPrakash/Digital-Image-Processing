@@ -147,21 +147,38 @@ cv::Mat addNeumannBoundary(const cv::Mat& M){
   cv::Scalar value;
   value = cv::Scalar(0);
   top = bottom = left = right = 1;
-  cv::copyMakeBorder( M, dst, top, bottom, left, right, borderType, value );
+  cv::copyMakeBorder( M, dst, top, bottom, left, right, borderType, value);
   return(dst);
 }
 
+cv::Mat Laplac(const cv::Mat& M){
+  cv::Mat Lap;
+  int kernel_size = 3;
+  int scale = 1;
+  int delta = 0;
+  int ddepth = CV_64F;
+  cv::Laplacian( M, Lap,ddepth, kernel_size,scale,delta,cv::BORDER_DEFAULT );
+  for(int i = 0; i < Lap.rows; i++){
+    Lap.at<double>(i,0) = 0;
+    Lap.at<double>(i,Lap.cols - 1) = 0;
+  }
+  for(int i = 0; i < Lap.cols; i++){
+    Lap.at<double>(0,i) = 0;
+    Lap.at<double>( Lap.rows - 1 ,i) = 0;
+  }
+  return(Lap);
+}
+
 cv::Mat jacobi( const cv::Mat& xk,const cv::Mat& b){
-  //xk have boundary added
   int n = b.rows - 1;
-  int m = b.cols - 1 ;
+  int m = b.cols - 1;
   assert(n>0 && m>0); 
   double dx = 1/(double)n;
   double dy = 1/(double)m;
   cv::Mat xkp1(xk.rows,xk.cols,CV_64F);
-  for(int i = 1 ; i <= n; i++){
-    for(int j = 1; j <= m; j++){
-      xkp1.at<double>(i,j) = (b.at<double>(i - 1,j - 1) 
+  for(int i = 1 ; i < n; i++){
+    for(int j = 1; j < m; j++){
+      xkp1.at<double>(i,j) = (b.at<double>(i,j) 
                             - (xk.at<double>(i+1,j) + xk.at<double>(i-1,j))/(dx*dx) 
                             - (xk.at<double>(i,j+1) + xk.at<double>(i,j-1))/(dy*dy) )
                             / ( - 2/(dx*dx) - 2/(dy*dy) );
@@ -171,38 +188,43 @@ cv::Mat jacobi( const cv::Mat& xk,const cv::Mat& b){
 }
 
 
-
-cv::Mat removeBorder(cv::Mat& M){
-  cv::Mat BL(M.rows -2,M.cols - 2,CV_64F);
-  for(int i = 0 ; i < BL.rows; i++){
-    for(int j = 0; j < BL.cols; j++){
-      BL.at<double>(i,j) = M.at<double>(i+1,j+1);
-    }
-  }
-  return(BL);
-}
-
-
-
-
 cv::Mat multigrid(const cv::Mat& U,const cv::Mat& b ){
-  cv::Mat x0 = U.clone();
-  x0 = addNeumannBoundary(x0);
-  for(int i=0;i<10;i++) {
-    x0 = jacobi(x0,b);
-  }
-  cv::Mat xk;
-  x0 = removeBorder(x0);
-  cv::Laplacian( x0, xk, CV_64F, 3, 1,0,cv::BORDER_DEFAULT );
-  cv::Mat r = xk - b;
+  cv::Mat x0(U.rows,U.cols,CV_64F);
+  //smoothing
+  for(int i=0;i<10;i++) x0 = jacobi(x0,b);
+  cv::Mat lxk = Laplac(x0);
+  // computing residual
+  cv::Mat r = lxk - b;
+  // downsample to coarser r
   cv::Mat rc;
   cv::pyrDown(r, rc, cv::Size(r.cols/2, r.rows/2));
   cv::Mat ec(rc.rows,rc.cols,CV_64F,cv::Scalar(0));
-  ec = addNeumannBoundary(ec);
-  for(int i=0; i<10 ;i++) {
+  for(int i=0; i<1000 ;i++) {
     ec = jacobi(ec,rc);
   }
-  ec = removeBorder(ec);
+  // interpolate
+  cv::Mat e;
+  cv::pyrUp(ec,e, cv::Size(r.cols, r.rows));
+  x0 = (x0 - e);
+  return(x0);
+}
+
+
+cv::Mat rec_multigrid(const cv::Mat& U, const cv::Mat& b){
+  cv::Mat x0(U.rows,U.cols,CV_64F);
+  //smoothing
+  for(int i=0;i<10;i++) x0 = jacobi(x0,b);
+  cv::Mat lxk = Laplac(x0);
+  // computing residual
+  cv::Mat r = lxk - b;
+  // downsample to coarser r
+  cv::Mat rc;
+  cv::pyrDown(r, rc, cv::Size(r.cols/2, r.rows/2));
+  cv::Mat ec(rc.rows,rc.cols,CV_64F,cv::Scalar(0));
+  for(int i=0; i<1000 ;i++) {
+    ec = jacobi(ec,rc);
+  }
+  // interpolate
   cv::Mat e;
   cv::pyrUp(ec,e, cv::Size(r.cols, r.rows));
   x0 = (x0 - e);
@@ -251,30 +273,28 @@ int main(int argc, char** argv){
     cv::Mat L(image.rows,image.cols,CV_64FC1);
     L = (a*(Luminance)/logavg);
     cv::resize(L,L,cv::Size(64,64));
-    cv::Mat Lap;
-    cv::GaussianBlur( L, Lap, cv::Size(3,3), 0.3, 0.3,cv::BORDER_DEFAULT);
-    int kernel_size = 3;
-    int scale = 1;
-    int delta = 0;
-    int ddepth = CV_64F;
-    cv::Laplacian( Lap, Lap, ddepth, kernel_size, scale,delta, cv::BORDER_DEFAULT );
+    cv::Mat Lap = Laplac(L);
     
 
     cv::Mat mul_sol(Lap.rows,Lap.cols,CV_64F,cv::Scalar(0));
+    cv::Mat rec_sol(Lap.rows,Lap.cols,CV_64F,cv::Scalar(0));
     cv::Mat jac_sol(Lap.rows,Lap.cols,CV_64F,cv::Scalar(0));
     
-    cv::Mat rhs = addNeumannBoundary(Lap);
-    jac_sol = addNeumannBoundary(jac_sol);
-    for(int i=0;i<1000;i++) {
-      jac_sol = jacobi(jac_sol,rhs);
-    }
+    
+    // for(int i=0;i<10000;i++) {
+    //   jac_sol = jacobi(jac_sol,Lap);
+    // }
     
     
-    for(int i = 0;i<200;i++)  mul_sol = multigrid(mul_sol,Lap);
+    for(int i = 0;i<30;i++)  mul_sol = multigrid(mul_sol,Lap);
     std::cout<<mul_sol.size();
     
+
+    cv::Mat rec_sol = rec_multigrid(rec_sol,Lap);
     // plotHistogram(sol);
     // std::cout<<jac_sol;
+
+    
     
 
     cv::namedWindow( "Laplacian",CV_WINDOW_FREERATIO);
@@ -284,10 +304,10 @@ int main(int argc, char** argv){
     cv::imshow( "Original", L);
 
     cv::namedWindow( "Multigrid Solution",CV_WINDOW_FREERATIO);
-    cv::imshow( "Multigrid Solution", 1000*mul_sol);
+    cv::imshow( "Multigrid Solution", 1500*mul_sol);
 
-    cv::namedWindow( "Jacobi Solution",CV_WINDOW_FREERATIO);
-    cv::imshow( "Jacobi Solution", 1000*jac_sol);
+    // cv::namedWindow( "Jacobi Solution",CV_WINDOW_FREERATIO);
+    // cv::imshow( "Jacobi Solution", 1200*jac_sol);
 
     
     // cv::namedWindow( "Error",CV_WINDOW_FREERATIO);
