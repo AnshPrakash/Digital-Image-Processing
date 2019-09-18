@@ -48,7 +48,72 @@ cv::Mat Laplac(const cv::Mat& M){
   }
   return(Lap);
 }
+void plotHistogram(cv::Mat img){
+    std::vector<cv::Mat> bgr_planes;
+    cv::split( img, bgr_planes );
+    /// Establish the number of bins
+    int histSize = 256;
 
+    double minVal; 
+    double maxVal;
+    cv::Point minLoc; 
+    cv::Point maxLoc;
+    cv::minMaxLoc( bgr_planes[0], &minVal, &maxVal, &minLoc, &maxLoc );
+
+    float range[] = { (float)minVal, (float)maxVal } ;
+    // float range[] = { 0, 256 } ;
+    const float* histRange = { range };
+    bool uniform = true; bool accumulate = false;
+    // cv::Mat b_hist, g_hist, r_hist;
+
+    std::vector<cv::Mat> hist(img.channels());
+
+    /// Compute the histograms:
+    for (int i = 0; i < img.channels(); i++){
+        cv::calcHist( &bgr_planes[i], 1, 0, cv::Mat(), hist[i], 1, &histSize, &histRange, uniform, accumulate );
+    }
+    
+    
+    // Draw the histograms for B, G and R
+    int hist_w = 512; int hist_h = 400;
+    int bin_w = cvRound( (double) hist_w/histSize );
+    cv::Mat histImage( hist_h, hist_w, CV_8UC3, cv::Scalar( 0,0,0) );
+    /// Normalize the result to [ 0, histImage.rows ]
+
+    for (int i = 0; i < img.channels(); i++){
+        cv::normalize(hist[i], hist[i], 0, histImage.rows, cv::NORM_MINMAX, -1, cv::Mat() );
+    }
+    
+    /// Draw for each channel
+    std::vector<int>  Bcolors = {255,0,0};
+    std::vector<int>  Gcolors = {0,255,0};
+    std::vector<int>  Rcolors = {0,0,255};
+
+    for( int i = 1; i < histSize; i++ )
+    {
+        for (int j = 0; j < img.channels(); j++){
+            cv::line( histImage, cv::Point( bin_w*(i-1), hist_h - cvRound(hist[j].at<float>(i-1)) ) ,
+                    cv::Point( bin_w*(i), hist_h - cvRound(hist[j].at<float>(i))),
+                    cv::Scalar( Bcolors[j], Gcolors[j], Rcolors[j]), 2, 8, 0  );
+        }
+    }
+    
+    /// Display
+    // imwrite( "./DogeAndBurnImages/img.jpg",histImage );
+    cv::namedWindow("calcHist Demo", CV_WINDOW_FREERATIO );
+    cv::imshow("calcHist Demo", histImage );
+    cv::waitKey(0);
+    cv::destroyAllWindows();	
+}
+
+void clipping(cv::Mat& M){
+  for(int i = 0 ;i<M.rows;i++){
+    for(int j = 0;j<M.cols;j++ ){
+      if(M.at<float>(i,j) < 0) M.at<float>(i,j) = 0;
+      if(M.at<float>(i,j) > 1) M.at<float>(i,j) = 1;
+    }
+  }
+}
 // void showdft(const cv::Mat& M){
 //     cv::Mat SpArr[2];
 //     cv::split(M,SpArr);
@@ -65,25 +130,6 @@ cv::Mat Laplac(const cv::Mat& M){
 //     cv::destroyAllWindows();
 // }
 
-void getlhsF(cv::Mat& complexI){
-    // recenter(complexI);
-    for(int r = 0;r<complexI.rows;r++){
-        for(int c = 0 ;c<complexI.cols; c++){
-            double Lx,Ly;
-            Lx = complexI.rows; Ly = complexI.cols;
-            double p = r;// - Lx/2;
-            double q = c;// - Ly/2;
-            
-            // double k = -4*M_PI*M_PI*((p*p)/(Lx*Lx) + ((q*q)/(Ly*Ly) ));
-            double k = -4*(sin(M_PI*p/Lx)*sin(M_PI*p/Lx) + sin(M_PI*q/Ly)*sin(M_PI*q/Ly) )/2;
-            if(abs(k)<0.1) continue;
-            complexI.at<cv::Vec2f>(r,c)[0] = complexI.at<cv::Vec2f>(r,c)[0]/k;
-            complexI.at<cv::Vec2f>(r,c)[1] = complexI.at<cv::Vec2f>(r,c)[1]/k;
-        }
-    }
-    // recenter(complexI);
-}
-
 void dftImage(const cv::Mat& G,cv::Mat& complexI){
     int m = cv::getOptimalDFTSize( G.rows );
     int n = cv::getOptimalDFTSize( G.cols );
@@ -98,46 +144,70 @@ void dftImage(const cv::Mat& G,cv::Mat& complexI){
 
 
 
-// cv::Mat solvePoisson( const cv::Mat& F,const std::vector<double>& bd1a, const std::vector<double>& bd1b,
-//                       const std::vector<double>& bd2a, const std::vector<double>& bd2b,
-//                       bool add_boundary_to_solution = false){
+cv::Mat solvePoisson( const cv::Mat& F,const cv::Mat& boundaryImage){
+  cv::Mat extendedF(2*(F.rows + 1),F.cols,CV_64F);
+  for(int i = 0; i < F.cols; i++ ){
+    extendedF.at<double>(0,i) = 0;
+    extendedF.at<double>(F.rows + 1,i) = 0;
+  }
+  for(int i = 0; i < F.rows; i++){
+    for(int j =0; j < F.cols; j++){
+      extendedF.at<double>(i+1,j) = F.at<double>(i,j);
+    }
+  }
+  for(int i = F.rows + 2; i < extendedF.rows; i++){
+    for(int j = 0; j < F.cols; j++){
+      extendedF.at<double>(i,j) = -F.at<double>(2*F.rows - i + 1 ,j);
+    }
+  }
+  cv::Mat complexI;
+  dftImage(F,complexI);
+  // dftImage(extendedF,complexI);
+  for(int r = 0;r<complexI.rows;r++){
+      for(int c = 0 ;c<complexI.cols; c++){
+          double M,N;
+          M = complexI.rows; N = complexI.cols;
+          double p = r - 1;
+          double q = c - 1;
+          // double k = -4*M_PI*M_PI*((p*p)/(Lx*Lx) + ((q*q)/(Ly*Ly) ));
+          double k = -4*((sin(M_PI*p/(M)))*(sin(M_PI*p/(M))) +  (sin(M_PI*q/(N)))*(sin(M_PI*q/(N))))  ;
+          if(abs(k)<0.001) continue;
+          complexI.at<cv::Vec2f>(r,c)[0] = complexI.at<cv::Vec2f>(r,c)[0]/k;
+          complexI.at<cv::Vec2f>(r,c)[1] = complexI.at<cv::Vec2f>(r,c)[1]/k;
 
-//   double h1=1.0, h2=1.0, a1=1.0, a2=1.0;
-//   double bdvalue = neumann_compat(F,a1,a2,h1,h2);
-//   // Poisson equation solver
-//   trunc = pde::poisolve(U,F,a1,a2,h1,h2,bdvalue,bdtype,false);
-//   size_t n1=F.rows;
-//   size_t n2=F.cols;
-//   assert(n1>0 && n2>0);
-
-//   // adjust right hand side F with boundary condition (nothing to do for =0)
-//   cv::Mat rhs = F.clone();
-//   assert( bd1a.size() == bd1b.size() && bd1a.size() == n2 );
-//   assert( bd2a.size() == bd2b.size() && bd2a.size() == n1 );
-//   double c1,c2;
-//   //Neuamann boundary
-//   c1=2.0*a1/h1;
-//   c2=2.0*a2/h2;
-//   for(size_t i=0; i<n2; i++) {
-//     rhs.at<0,i>    -= c1 * bd1a[i];
-//     rhs.at<n1-1,i> -= c1 * bd1b[i];
-//   }
-//   for(size_t i=0; i<n1; i++) {
-//     rhs.at<i,0>    -= c2 * bd2a[i];
-//     rhs.at<i,n2-1> -= c2 * bd2b[i];
-//   }
+      }
+  }
   
-//   return(F);
-// }
+  complexI.at<cv::Vec2f>(0,0)[0] = 0;
+  complexI.at<cv::Vec2f>(0,0)[1] = 0;
+
+
+  cv::Mat FinalImage;
+
+  cv::dft(complexI,FinalImage,cv::DFT_INVERSE|cv::DFT_SCALE);
+  
+  cv::Mat components[2];
+  cv::split(FinalImage,components);
+  double min, max;
+  cv::minMaxLoc(components[0], &min, &max);
+  std::cout<<"Min "<<min<<" Max "<<max<<"\n";
+  components[0] = (components[0] - min)/(max - min);
+  
+  clipping(components[0]);
+  // cv::Mat dis;
+  // cv::resize(components[0],dis,cv::Size(F.cols,(int)(1.3*F.rows)));
+  return(components[0]);
+}
+
 cv::Mat gamma(cv::Mat image){
-  cv::Mat ret(image.rows,image.cols,CV_32FC3);
+  cv::Mat ret(image.rows,image.cols,CV_64FC3);
   for(int r = 0 ; r<image.rows;r++){
     for (int c = 0; c < image.cols; c++){
       for(int ch = 0;ch<image.channels();ch++){
-        if(image.at<cv::Vec3f>(r,c)[ch]<=0.0031308)
-          ret.at<cv::Vec3f>(r,c)[ch] = 12.92*image.at<cv::Vec3f>(r,c)[ch];
+        if(image.at<cv::Vec3d>(r,c)[ch]<=0.0031308)
+          ret.at<cv::Vec3d>(r,c)[ch] = 12.92*image.at<cv::Vec3d>(r,c)[ch];
         else
-          ret.at<cv::Vec3f>(r,c)[ch] = 1.055*std::pow(image.at<cv::Vec3f>(r,c)[ch],1/2.2) - 0.055;
+          ret.at<cv::Vec3d>(r,c)[ch] = 1.055*std::pow(image.at<cv::Vec3d>(r,c)[ch],1/2.2) - 0.055;
       }
     }
   }
@@ -170,39 +240,46 @@ int main(int argc, char** argv){
     double a = 0.18;
     cv::Mat L(image.rows,image.cols,CV_64FC1);
     L = (a*(Luminance)/logavg);
+    cv::Mat boundaryImage = L.clone();
+    for(int i = L.rows/4 ;i < L.rows/2 ; i++ ){
+      for(int j = L.cols/4; j< L.cols/2 ; j++ ){
+        boundaryImage.at<double>(i,j) = 0;
+      }
+    }
     // cv::resize(L,L,cv::Size(64,64));
     cv::Mat Lap = Laplac(L);
-    cv::Mat complexI;
-    // dftImage(L,complexI);
-    dftImage(Lap,complexI);
-    // dftImage(G,complexI);
+    cv::Mat solved = solvePoisson(Lap,boundaryImage);
+    // cv::Mat complexI;
+    // // dftImage(L,complexI);
+    // dftImage(Lap,complexI);
+    // // dftImage(G,complexI);
     
-    // getlhsF(complexI);
+    // // getlhsF(complexI);
     
-    for(int r = 0;r<complexI.rows;r++){
-        for(int c = 0 ;c<complexI.cols; c++){
-            double M,N;
-            M = complexI.rows; N = complexI.cols;
-            double p = r - 1;
-            double q = c - 1;
-            // double k = -4*M_PI*M_PI*((p*p)/(Lx*Lx) + ((q*q)/(Ly*Ly) ));
-            double k = -4*((sin(M_PI*p/(M)))*(sin(M_PI*p/(M))) +  (sin(M_PI*q/(N)))*(sin(M_PI*q/(N))))  ;
-            if(abs(k)<0.001) continue;
-            complexI.at<cv::Vec2f>(r,c)[0] = complexI.at<cv::Vec2f>(r,c)[0]/k;
-            complexI.at<cv::Vec2f>(r,c)[1] = complexI.at<cv::Vec2f>(r,c)[1]/k;
-        }
-    }
+    // for(int r = 0;r<complexI.rows;r++){
+    //     for(int c = 0 ;c<complexI.cols; c++){
+    //         double M,N;
+    //         M = complexI.rows; N = complexI.cols;
+    //         double p = r - 1;
+    //         double q = c - 1;
+    //         // double k = -4*M_PI*M_PI*((p*p)/(Lx*Lx) + ((q*q)/(Ly*Ly) ));
+    //         double k = -4*((sin(M_PI*p/(M)))*(sin(M_PI*p/(M))) +  (sin(M_PI*q/(N)))*(sin(M_PI*q/(N))))  ;
+    //         if(abs(k)<0.001) continue;
+    //         complexI.at<cv::Vec2f>(r,c)[0] = complexI.at<cv::Vec2f>(r,c)[0]/k;
+    //         complexI.at<cv::Vec2f>(r,c)[1] = complexI.at<cv::Vec2f>(r,c)[1]/k;
+
+    //     }
+    // }
     
-    cv::Mat FinalImage;
+    // cv::Mat FinalImage;
     
-    cv::dft(complexI,FinalImage,cv::DFT_INVERSE|cv::DFT_SCALE);
-    cv::Mat components[2];
-    cv::split(FinalImage,components);
-    // std::cout<<components[0];
-    double min, max;
-    cv::minMaxLoc(components[0], &min, &max);
-    std::cout<<"Min "<<min<<" Max "<<max<<"\n";
-    
+    // cv::dft(complexI,FinalImage,cv::DFT_INVERSE|cv::DFT_SCALE);
+    // cv::Mat components[2];
+    // cv::split(FinalImage,components);
+    // // std::cout<<components[0];
+    // double min, max;
+    // cv::minMaxLoc(components[0], &min, &max);
+    // std::cout<<"Min "<<min<<" Max "<<max<<"\n";
     cv::namedWindow( "Laplacian",CV_WINDOW_FREERATIO);
     cv::imshow( "Laplacian", Lap);
 
@@ -210,7 +287,7 @@ int main(int argc, char** argv){
     cv::imshow( "Original", L);
 
     cv::namedWindow( "Rapid Poisson Solver",CV_WINDOW_FREERATIO);
-    cv::imshow( "Rapid Poisson Solver", components[0]);
+    cv::imshow( "Rapid Poisson Solver", solved);
 
 
 
