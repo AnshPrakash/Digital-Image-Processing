@@ -99,6 +99,7 @@ void clipping(cv::Mat& M){
 }
 
 void recenter(cv::Mat& M){
+  	M = M(cv::Rect(0, 0, M.cols & -2, M.rows & -2));
     int centerX = M.cols/2;
     int centerY = M.rows/2;
     cv::Mat q1(M,cv::Rect(0,0,centerX,centerY));
@@ -114,21 +115,6 @@ void recenter(cv::Mat& M){
     swapMap.copyTo(q3);
 }
 
-void shiftMat(cv::Mat& M,int cx,int cy){
-    int centerX = M.cols/2;
-    int centerY = M.rows/2;
-    cv::Mat q1(M,cv::Rect(0,0,cx + 1,cy + 1));
-    cv::Mat q2(M,cv::Rect(centerX,0,centerX,centerY));
-    cv::Mat q3(M,cv::Rect(0,centerY,centerX,centerY));
-    cv::Mat q4(M,cv::Rect(centerX,centerY,centerX,centerY));
-    cv::Mat swapMap;
-    q1.copyTo(swapMap);
-    q4.copyTo(q1);
-    swapMap.copyTo(q4);
-    q2.copyTo(swapMap);
-    q3.copyTo(q2);
-    swapMap.copyTo(q3);
-}
 
 void showdft(const cv::Mat& M){
     cv::Mat SpArr[2];
@@ -151,17 +137,23 @@ float gaussfunc(float sigma, double x , double x0 , double y ,double y0){
     double val = 0;
     return(exp(-((x-x0)*(x-x0)+(y-y0)*(y - y0))/(2*sigma*sigma) ));
 }
-cv::Mat gaussKer(float sigma,int size){
-    cv::Mat ker(size,size,CV_32F);
-    float sum = 0;
-    for (int i = 0; i < size; i++){
-        for (int j = 0; j < size; j++){
-            ker.at<float>(i,j) = gaussfunc(sigma,i,size/2,j,size/2);
-            sum += ker.at<float>(i,j);
-        }
-    }
-    ker = ker/sum;
-    return(ker);
+bool comp(int a, int b) 
+{ 
+    return (a < b); 
+} 
+cv::Mat gaussKer(float sigma){
+  int size = std::max((int)(sigma*4),3,comp);
+  cv::Mat ker(size+2,size+2,CV_32F,cv::Scalar(0));
+  float sum = 0;
+  for (int i = 1; i <= size; i++){
+      for (int j = 1; j <= size; j++){
+          ker.at<float>(i,j) = gaussfunc(sigma,i,size/2,j,size/2);
+          sum += ker.at<float>(i,j);
+      }
+  }
+  ker = ker/sum;
+  // std::cout<< ker<<"\n";
+  return(ker);
 }
 void dftImage(const cv::Mat& G,cv::Mat& complexI){
     int m = cv::getOptimalDFTSize( G.rows );
@@ -227,59 +219,80 @@ double PSNR(const cv::Mat& I1,const cv::Mat& I2,int type){
     return(PSNR);
 }
 
-cv::Mat WienerFilter(cv::Mat& H,cv::Mat& G,double r){
-    for(int u = 0; u < H.rows; u++){
-        for(int v = 0; v < H.cols; v++){
-            H.at<cv::Vec2f>(u,v)[1] = -H.at<cv::Vec2f>(u,v)[1];
-        }
-    }
-    cv::Mat F_p;
-    cv::Mat SpArr[2];
-    cv::split(H,SpArr);
-    cv::Mat Mag;
-    cv::magnitude(SpArr[0],SpArr[1],Mag);
-    F_p =  (H/(Mag + r))*G; // H have two channels while Mag have one channel check for this
-    cv::Mat complex;
-    idftImage(F_p,complex);
-    cv::split(complex,SpArr);
-    return(SpArr[0]);
+cv::Mat WienerFilter(cv::Mat& H,const cv::Mat& G,double r){
+  //conjugate
+  // std::cout<<type2str(G.type())<<" \n";
+  for(int u = 0; u < H.rows; u++){
+      for(int v = 0; v < H.cols; v++){
+          H.at<cv::Vec2f>(u,v)[1] = -H.at<cv::Vec2f>(u,v)[1];
+      }
+  }
+  cv::Mat F_p;
+  cv::Mat SpArr[2];
+  cv::split(H,SpArr);
+  cv::Mat Mag;
+  cv::magnitude(SpArr[0],SpArr[1],Mag);
+  Mag = Mag.mul(Mag);
+  std::vector<cv::Mat> vec;
+  vec.push_back(Mag.clone());
+  vec.push_back(Mag.clone());
+  cv::merge(vec,Mag);
+  cv::Mat buff = H/(Mag + r);
+  // std::cout<<type2str(buff.type())<<" "<<type2str(G.type());
+  cv::mulSpectrums(G,buff,F_p,false);
+  // F_p =  (H/(Mag + r))*G; // H have two channels while Mag have one channel check for this
+  cv::Mat complex;
+  idftImage(F_p,complex);
+  cv::split(complex,SpArr);
+  // return(H);
+  return(SpArr[0]);
+
 }
 
+
+
+
 cv::Mat Blur(cv::Mat& M,cv::Mat ker){
-    cv::Mat fft_M,fft_ker;
-    cv::Mat padded_ker(M.rows,M.cols,CV_32F,cv::Scalar(0));
-    for(int i = 0;i < ker.rows; i++){
-        for (int j = 0; j < ker.cols; j++){
-            padded_ker.at<float>(i,j) = ker.at<float>(i,j);
-        }
-    }
-    shiftMat(padded_ker,ker.rows/2,ker.cols/2);
-    dftImage(M,fft_M);
-    dftImage(padded_ker,fft_ker);
-    cv::Mat fft_G = fft_M.mul(fft_ker);
-    cv::Mat G;
-    cv::Mat SpArr[2];
-    cv::split(fft_ker,SpArr);
-    // showdft(fft_ker);
-    idftImage(fft_G,G);
-    return(G);
+  cv::Mat fft_M,fft_ker;
+  cv::Mat padded_ker(M.rows,M.cols,CV_32F,cv::Scalar(0));;// = pad_recenterKer(M.rows,M.cols,ker);;
+  ker.copyTo(padded_ker(cv::Rect(0,0, ker.cols,ker.rows)));
+  dftImage(M,fft_M);
+  dftImage(padded_ker,fft_ker);
+  cv::Mat fft_G;
+  cv::mulSpectrums(fft_M,fft_ker,fft_G,false);
+  cv::Mat G;
+  idftImage(fft_G,G);
+  return(G);
 }
+
 int main(int argc, char** argv){
-    cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
+    cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_GRAYSCALE);
     image.convertTo(image,CV_32F);
     image = image/255;
     std::cout<<type2str(image.type())<<"\n";
     // cv::resize(image,image,cv::Size(16,16));
     std::cout<< image.size()<<"\n";
     
-    cv::Mat blurred = Blur(image,gaussKer(1,3));
-
+    cv::Mat blurred = Blur(image,gaussKer(5));
+    cv::Mat ker = gaussKer(5);
+    cv::Mat padded_ker(image.rows,image.cols,CV_32F,cv::Scalar(0));;// = pad_recenterKer(M.rows,M.cols,ker);;
+    ker.copyTo(padded_ker(cv::Rect(0,0, ker.cols,ker.rows)));    
+    cv::Mat H;
+    cv::Mat dft_blurr;
+    dftImage(blurred,dft_blurr);
+    dftImage(padded_ker,H);
+    cv::Mat filtered = WienerFilter(H,dft_blurr,0.000);
     // cv::filter2D(image,blurred,CV_32F,gaussKer(2,3));
+
     cv::namedWindow( "Original",CV_WINDOW_FREERATIO);
     cv::imshow( "Original",image);
 
     cv::namedWindow( "Blurred",CV_WINDOW_FREERATIO);
     cv::imshow( "Blurred",blurred);
+
+
+    cv::namedWindow( "filtered",CV_WINDOW_FREERATIO);
+    cv::imshow( "filtered",filtered);
 
     cv::waitKey(0); 
     cv::destroyAllWindows();	
