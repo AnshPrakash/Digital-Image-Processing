@@ -98,6 +98,71 @@ void clipping(cv::Mat& M){
   }
 }
 
+void recenter(cv::Mat& M){
+    int centerX = M.cols/2;
+    int centerY = M.rows/2;
+    cv::Mat q1(M,cv::Rect(0,0,centerX,centerY));
+    cv::Mat q2(M,cv::Rect(centerX,0,centerX,centerY));
+    cv::Mat q3(M,cv::Rect(0,centerY,centerX,centerY));
+    cv::Mat q4(M,cv::Rect(centerX,centerY,centerX,centerY));
+    cv::Mat swapMap;
+    q1.copyTo(swapMap);
+    q4.copyTo(q1);
+    swapMap.copyTo(q4);
+    q2.copyTo(swapMap);
+    q3.copyTo(q2);
+    swapMap.copyTo(q3);
+}
+
+void shiftMat(cv::Mat& M,int cx,int cy){
+    int centerX = M.cols/2;
+    int centerY = M.rows/2;
+    cv::Mat q1(M,cv::Rect(0,0,cx + 1,cy + 1));
+    cv::Mat q2(M,cv::Rect(centerX,0,centerX,centerY));
+    cv::Mat q3(M,cv::Rect(0,centerY,centerX,centerY));
+    cv::Mat q4(M,cv::Rect(centerX,centerY,centerX,centerY));
+    cv::Mat swapMap;
+    q1.copyTo(swapMap);
+    q4.copyTo(q1);
+    swapMap.copyTo(q4);
+    q2.copyTo(swapMap);
+    q3.copyTo(q2);
+    swapMap.copyTo(q3);
+}
+
+void showdft(const cv::Mat& M){
+    cv::Mat SpArr[2];
+    cv::split(M,SpArr);
+    cv::Mat Mag;
+    cv::magnitude(SpArr[0],SpArr[1],Mag);
+    Mag += cv::Scalar::all(1);
+    cv::log(Mag,Mag);
+    cv::normalize(Mag,Mag,0,1,CV_MINMAX);
+    recenter(Mag);
+    cv::namedWindow( "DFT",CV_WINDOW_FREERATIO);
+    cv::imshow("DFT",Mag);
+    // cv::normalize(Mag,Mag,0,1,CV_MINMAX);
+    cv::waitKey(0); 
+    cv::destroyAllWindows();
+}
+
+
+float gaussfunc(float sigma, double x , double x0 , double y ,double y0){
+    double val = 0;
+    return(exp(-((x-x0)*(x-x0)+(y-y0)*(y - y0))/(2*sigma*sigma) ));
+}
+cv::Mat gaussKer(float sigma,int size){
+    cv::Mat ker(size,size,CV_32F);
+    float sum = 0;
+    for (int i = 0; i < size; i++){
+        for (int j = 0; j < size; j++){
+            ker.at<float>(i,j) = gaussfunc(sigma,i,size/2,j,size/2);
+            sum += ker.at<float>(i,j);
+        }
+    }
+    ker = ker/sum;
+    return(ker);
+}
 void dftImage(const cv::Mat& G,cv::Mat& complexI){
     int m = cv::getOptimalDFTSize( G.rows );
     int n = cv::getOptimalDFTSize( G.cols );
@@ -123,7 +188,7 @@ void idftImage(const cv::Mat& G,cv::Mat& complexI){
     // std::cout<<G;
     // cv::Mat planes[] = {cv::Mat_<float>(padded), cv::Mat::zeros(padded.size(), CV_32F)};
     cv::merge(padded, 2, complexI);         // Add to the expanded another plane with zero
-    cv::dft(complexI, complexI,cv::DFT_INVERSE|cv::DFT_SCALE);
+    cv::dft(complexI, complexI,cv::DFT_INVERSE|cv::DFT_SCALE|cv::DFT_REAL_OUTPUT);
 }
 
 
@@ -140,24 +205,6 @@ cv::Mat addGaussianNoise(const cv::Mat& M){
         }
     }
     return(L);
-}
-
-cv::Mat saltpepperNoise(const cv::Mat& M){
-    cv::Mat L = M.clone();
-    std::default_random_engine generator;
-    std::normal_distribution<float> distribution(0.5,0.2);
-    float randn = distribution(generator);
-    for(int i = 0;i < L.rows; i++){
-        for(int j = 0; j < L.cols; j++){
-            randn = distribution(generator);
-            if(fabs(randn) > 0.9 ){
-                randn = distribution(generator);
-                L.at<float>(i,j) = (randn < 0.5) ? 0 :1;
-            }
-        }
-    }
-    return(L);
-
 }
 
 double PSNR(const cv::Mat& I1,const cv::Mat& I2,int type){
@@ -180,95 +227,59 @@ double PSNR(const cv::Mat& I1,const cv::Mat& I2,int type){
     return(PSNR);
 }
 
-cv::Mat medianfilters(const cv::Mat& img){
-    cv::Mat MinMed;
-    cv::Mat Med;
-    cv::Mat M = img*255;
-    M.convertTo(M,CV_8U);
-    double minn = -10000000;
-    for(int k = 3 ;k < 10 ; k+=2){
-        cv::medianBlur(M,Med,k);
-        // std::cout<<type2str(Med.type())<<"\n";
-        if(minn < PSNR(Med,M,1)){
-            minn = PSNR(Med,M,1);
-            MinMed = Med;
+cv::Mat WienerFilter(cv::Mat& H,cv::Mat& G,double r){
+    for(int u = 0; u < H.rows; u++){
+        for(int v = 0; v < H.cols; v++){
+            H.at<cv::Vec2f>(u,v)[1] = -H.at<cv::Vec2f>(u,v)[1];
         }
     }
-    MinMed.convertTo(MinMed,CV_32F);
-    MinMed = MinMed/255;
-    std::cout<<minn<<"\n";
-    return(MinMed);
+    cv::Mat F_p;
+    cv::Mat SpArr[2];
+    cv::split(H,SpArr);
+    cv::Mat Mag;
+    cv::magnitude(SpArr[0],SpArr[1],Mag);
+    F_p =  (H/(Mag + r))*G; // H have two channels while Mag have one channel check for this
+    cv::Mat complex;
+    idftImage(F_p,complex);
+    cv::split(complex,SpArr);
+    return(SpArr[0]);
 }
 
-cv::Mat MeanKernel(int k ){
-    cv::Mat ker(k,k,CV_32F,cv::Scalar::all(1));
-    return(ker);
-}
-
-cv::Mat meanfilters(const cv::Mat& M){
-    cv::Mat MinMean;
-    cv::Mat MeanM;
-    double minn = -1000000000;
-    cv::Mat ker;
-    for(int k = 3 ;k < 10 ; k++){
-        ker = MeanKernel(k);
-        cv::filter2D(M,MeanM,CV_32F,ker);
-        MeanM = MeanM/(k*k);
-        if(minn < PSNR(MeanM,M,0)){
-            minn = PSNR(MeanM,M,0);
-            MinMean = MeanM;
+cv::Mat Blur(cv::Mat& M,cv::Mat ker){
+    cv::Mat fft_M,fft_ker;
+    cv::Mat padded_ker(M.rows,M.cols,CV_32F,cv::Scalar(0));
+    for(int i = 0;i < ker.rows; i++){
+        for (int j = 0; j < ker.cols; j++){
+            padded_ker.at<float>(i,j) = ker.at<float>(i,j);
         }
     }
-    std::cout<<minn<<"\n";
-    return(MeanM);
+    shiftMat(padded_ker,ker.rows/2,ker.cols/2);
+    dftImage(M,fft_M);
+    dftImage(padded_ker,fft_ker);
+    cv::Mat fft_G = fft_M.mul(fft_ker);
+    cv::Mat G;
+    cv::Mat SpArr[2];
+    cv::split(fft_ker,SpArr);
+    // showdft(fft_ker);
+    idftImage(fft_G,G);
+    return(G);
 }
-
-
 int main(int argc, char** argv){
     cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
     image.convertTo(image,CV_32F);
     image = image/255;
     std::cout<<type2str(image.type())<<"\n";
+    // cv::resize(image,image,cv::Size(16,16));
     std::cout<< image.size()<<"\n";
-    cv::Mat G = addGaussianNoise(image);
-    cv::Mat SP = saltpepperNoise(image);
-    // std::cout<< PSNR(image,G,0);
-    cv::Mat G_medf,G_Mean;
-    // G_medf = G;
-    G_medf = medianfilters(G);
-    G_Mean = meanfilters(G);
-
-    cv::Mat SP_medf,SP_Mean;
-    SP_medf = medianfilters(SP);
-    SP_Mean = meanfilters(SP);
-
-
     
-    
+    cv::Mat blurred = Blur(image,gaussKer(1,3));
+
+    // cv::filter2D(image,blurred,CV_32F,gaussKer(2,3));
     cv::namedWindow( "Original",CV_WINDOW_FREERATIO);
     cv::imshow( "Original",image);
 
-
-    cv::namedWindow( "Gaussian",CV_WINDOW_FREERATIO);
-    cv::imshow( "Gaussian",G);
-
-    cv::namedWindow( "G_Medf",CV_WINDOW_FREERATIO);
-    cv::imshow( "G_Medf",G_medf);
-    
-    cv::namedWindow( "G_Meanf",CV_WINDOW_FREERATIO);
-    cv::imshow( "G_Meanf",G_Mean);
-    
-
-    cv::namedWindow( "Salt and Pepper",CV_WINDOW_FREERATIO);
-    cv::imshow( "Salt and Pepper",SP);
-
-
-    cv::namedWindow( "SP_Medf",CV_WINDOW_FREERATIO);
-    cv::imshow( "SP_Medf",SP_medf);
-    
-    cv::namedWindow( "SP_Meanf",CV_WINDOW_FREERATIO);
-    cv::imshow( "SP_Meanf",SP_Mean);
-    
+    cv::namedWindow( "Blurred",CV_WINDOW_FREERATIO);
+    cv::imshow( "Blurred",blurred);
 
     cv::waitKey(0); 
     cv::destroyAllWindows();	
