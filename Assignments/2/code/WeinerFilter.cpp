@@ -1,7 +1,9 @@
 #include <opencv2/opencv.hpp>
 #include <bits/stdc++.h>
 
+std::default_random_engine generator;
 
+cv::Mat Blur(cv::Mat& M,cv::Mat ker);
 // imshow(winname, mat) -> None
 // . The function may scale the image, depending on its depth:
 // . - If the image is 8-bit unsigned, it is displayed as is.
@@ -152,6 +154,12 @@ cv::Mat gaussKer(float sigma){
   // std::cout<< ker<<"\n";
   return(ker);
 }
+
+cv::Mat idker(){
+  cv::Mat ker(3,3,CV_32F,cv::Scalar(0));
+  ker.at<float>(1,1) = 1;
+  return(ker);
+}
 void dftImage(const cv::Mat& G,cv::Mat& complexI){
     int m = cv::getOptimalDFTSize( G.rows );
     int n = cv::getOptimalDFTSize( G.cols );
@@ -184,7 +192,7 @@ void idftImage(const cv::Mat& G,cv::Mat& complexI){
 
 cv::Mat GaussianNoise(double mean,double variance,int M,int N){
     cv::Mat L(M,N,CV_32F);
-    std::default_random_engine generator;
+    // std::default_random_engine generator;
     std::normal_distribution<float> distribution(mean,variance);
     float randn = distribution(generator);
     for(int i = 0;i < L.rows; i++){
@@ -196,77 +204,85 @@ cv::Mat GaussianNoise(double mean,double variance,int M,int N){
     return(L);
 }
 
-double SNR(const cv::Mat& I1,const cv::Mat& I2,int type = 0){
-  cv::Mat I = I1.clone();
-  cv::Mat N = I2.clone();
-  I.convertTo(I,CV_32F);
+cv::Mat SNR3(double mean,double stddev,int R,int C){
+  cv::Mat magF(cv::Size(C,R),CV_32F);
+  cv::Mat N = GaussianNoise(mean,stddev,R,C);
   N.convertTo(N,CV_32F);
-  double MAXi = 1.0;
-  MAXi = (type == 1)? 255:1;
-  dftImage(I,I);
   dftImage(N,N);
-  cv::Mat magN,magI;
+  double alpha = 0.5*(0.94);
+  for(int u = 0; u < R; u++ ){
+    for(int v = 0; v < C; v++){
+      magF.at<float>(u,v) = (u*u + v*v);
+    }
+  }
+  cv::pow(magF,alpha,magF);
+  // showdft(N);
+  cv::Mat magN;
   cv::Mat SpArr[2];
   cv::split(N,SpArr);
   cv::magnitude(SpArr[0],SpArr[1],magN);
-  cv::split(I,SpArr);
-  cv::magnitude(SpArr[0],SpArr[1],magI);
-  std::cout<<"mean "<< cv::mean(magN)[0]<<"\n";
-  magN = magN - cv::mean(magN)[0];
-  magI = magI - cv::mean(magI)[0];
   magN = magN.mul(magN);
-  magI = magI.mul(magI);
-
-  double snr = ((cv::sum(magI)[0])/(cv::sum(magN)[0]));
-  std::cout<<"snr "<<snr<<"\n";
-  // std::cout<<"s: "<<PSNR<<" "<<MSE<<" "<<(MAXi*MAXi)/MSE<<" \n____________\n";
+  magF = magF.mul(magF);
+  // double k = 0.0134;//proportionality factor factor
+  cv::Mat snr = magF/(cv::mean(magN)[0]);
+  double val = cv::mean(magF)[0]/(cv::mean(magN)[0]);
+  std::cout<<val<<" :val\n";
+  std::vector<cv::Mat> vec;
+  vec.push_back(snr.clone());
+  vec.push_back(snr.clone());
+  cv::merge(vec,snr);
   return(snr);
 }
 
-cv::Mat WienerFilter1(cv::Mat& H,const cv::Mat& G,const cv::Mat& noise,const cv::Mat& orig){
-  for(int u = 0; u < H.rows; u++){
-    for(int v = 0; v < H.cols; v++){
-        H.at<cv::Vec2f>(u,v)[1] = -H.at<cv::Vec2f>(u,v)[1];
-    }
-  }
-  cv::Mat F_p;
-  cv::Mat SpArr[2];
-  cv::split(H,SpArr);
-  cv::Mat Mag;
-  cv::magnitude(SpArr[0],SpArr[1],Mag);
-  Mag = Mag.mul(Mag);
-  cv::Mat I,N;
+cv::Mat SNR2(const cv::Mat& I1,double mean,double stddev){
+  cv::Mat I = I1.clone();
+  // cv::Mat N = I2.clone();
+  cv::Mat N = GaussianNoise(mean,stddev,I1.rows,I1.cols);
+  I.convertTo(I,CV_32F);
+  N.convertTo(N,CV_32F);
+  dftImage(I,I);
+  dftImage(N,N);
+  // showdft(N);
   cv::Mat magN,magI;
-  dftImage(orig,I);
-  dftImage(noise,N);
+  cv::Mat SpArr[2];
   cv::split(N,SpArr);
   cv::magnitude(SpArr[0],SpArr[1],magN);
   cv::split(I,SpArr);
   cv::magnitude(SpArr[0],SpArr[1],magI);
-  // magN = magN - cv::mean(magN)[0];
-  // magI = magI - cv::mean(magI)[0];
   magN = magN.mul(magN);
   magI = magI.mul(magI);
-  cv::Mat ISNR(I.rows,I.cols,CV_32F);
-  ISNR = magN/magI;
-  cv::Mat Denom = Mag + ISNR;
-  // std::cout<<ISNR;
-  std::vector<cv::Mat> dup;
-  dup.push_back(Denom.clone());
-  dup.push_back(Denom.clone());
-  cv::merge(dup,Denom);
-  cv::Mat buff = H/(Denom);
-  // std::cout<<type2str(buff.type())<<" "<<type2str(G.type());
-  cv::mulSpectrums(G,buff,F_p,false);
-  // F_p =  (H/(Mag + r))*G; // H have two channels while Mag have one channel check for this
-  cv::Mat complex;
-  idftImage(F_p,complex);
-  cv::split(complex,SpArr);
-  // return(H);
-  return(SpArr[0]);
+  double k = 0.0134;//proportionality factor factor
+  double val = cv::mean(magI)[0]/(cv::mean(magN)[0]);
+  std::cout<<val<<" : val\n";
+  cv::Mat snr(cv::Size(magN.cols,magN.rows),CV_32FC2,cv::Scalar(val,val));
+  return(snr);
 }
 
-cv::Mat WienerFilter(cv::Mat& H,const cv::Mat& G,double r){
+cv::Mat SNR1(const cv::Mat& img,const cv::Mat& noise){
+  cv::Mat I = img.clone();
+  cv::Mat N = noise.clone();
+  I.convertTo(I,CV_32F);
+  N.convertTo(N,CV_32F);
+  dftImage(I,I);
+  dftImage(N,N);
+  // showdft(N);
+  cv::Mat magN,magI;
+  cv::Mat SpArr[2];
+  cv::split(N,SpArr);
+  cv::magnitude(SpArr[0],SpArr[1],magN);
+  cv::split(I,SpArr);
+  cv::magnitude(SpArr[0],SpArr[1],magI);
+  magN = magN.mul(magN);
+  magI = magI.mul(magI);
+  cv::Mat snr = magI/magN;
+  std::vector<cv::Mat> vec;
+  vec.push_back(snr.clone());
+  vec.push_back(snr.clone());
+  cv::merge(vec,snr);
+  return(snr);
+}
+
+cv::Mat WienerFilter(cv::Mat& H,const cv::Mat& G,const cv::Mat& r){
   //conjugate
   // std::cout<<type2str(G.type())<<" \n";
   for(int u = 0; u < H.rows; u++){
@@ -285,16 +301,14 @@ cv::Mat WienerFilter(cv::Mat& H,const cv::Mat& G,double r){
   vec.push_back(Mag.clone());
   cv::merge(vec,Mag);
   cv::Mat buff = H/(Mag + r);
-  
-  // std::cout<<type2str(buff.type())<<" "<<type2str(G.type());
   cv::mulSpectrums(G,buff,F_p,false);
-  // F_p =  (H/(Mag + r))*G; // H have two channels while Mag have one channel check for this
   cv::Mat complex;
   idftImage(F_p,complex);
   cv::split(complex,SpArr);
   return(SpArr[0]);
 
 }
+
 
 
 cv::Mat wrap_WienerFilter(const cv::Mat& noise, cv::Mat& ker,cv::Mat& blurred,const cv::Mat img ){
@@ -304,10 +318,13 @@ cv::Mat wrap_WienerFilter(const cv::Mat& noise, cv::Mat& ker,cv::Mat& blurred,co
   cv::Mat dft_blurr;
   dftImage(blurred,dft_blurr);
   dftImage(padded_ker,H);
-  double  r = 1.0/SNR(img,noise);
-  std::cout<<r<<"\n";
-  // cv::Mat filtered = WienerFilter(H,dft_blurr,r);
-  cv::Mat filtered = WienerFilter1(H,dft_blurr,noise,img);
+  cv::Scalar mean,stddev;
+  cv::meanStdDev(noise,mean,stddev);
+  cv::Mat K = 1.0/SNR3(mean[0],stddev[0],img.rows,img.cols);
+  // cv::Mat K = 1.0/SNR2(img,mean[0],stddev[0]);
+  // cv::Mat K = 1.0/SNR1(img,noise);
+
+  cv::Mat filtered = WienerFilter(H,dft_blurr,K);
   return(filtered);
 }
 
@@ -329,13 +346,16 @@ int main(int argc, char** argv){
   cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_GRAYSCALE);
   image.convertTo(image,CV_32F);
   image = image/255;
+  // cv::resize(image,image,cv::Size(26,26));
   std::cout<<type2str(image.type())<<"\n";
   
   std::cout<< image.size()<<"\n";
-  cv::Mat blurred = Blur(image,gaussKer(5));
-  cv::Mat noise = GaussianNoise(0.025,0.001,blurred.rows,blurred.cols);
-  blurred = blurred + noise;
+  // cv::Mat ker = idker();
   cv::Mat ker = gaussKer(5);
+  cv::Mat blurred = Blur(image,ker);
+  cv::Mat noise = GaussianNoise(0.0,0.0001,blurred.rows,blurred.cols);
+  // std::cout<<noise<<"\n=========================================================================================\n";
+  blurred = blurred + noise;
   cv::Mat filtered = wrap_WienerFilter(noise,ker,blurred,image);
 
   // cv::filter2D(image,blurred,CV_32F,gaussKer(2,3));
