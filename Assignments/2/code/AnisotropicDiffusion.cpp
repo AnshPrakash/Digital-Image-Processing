@@ -107,7 +107,7 @@ cv::Mat addGaussianNoise(const cv::Mat& M){
     for(int i = 0;i < L.rows; i++){
         for(int j = 0; j < L.cols; j++){
             randn = distribution(generator);
-            L.at<float>(i,j) = L.at<float>(i,j) + fabs(randn)/10;
+            L.at<float>(i,j) = L.at<float>(i,j) + fabs(randn)/7;
         }
     }
     return(L);
@@ -185,19 +185,17 @@ cv::Mat Lapw(const cv::Mat& M){
 
 cv::Mat g(const cv::Mat& Lp){
   cv::Mat V = cv::abs(Lp);
-  double k = 0.05; // select in some way
+  double k = 0.08; // select in some way
   V = V/k;
   V = V.mul(V);
   cv::Mat res;
   cv::exp(-V,res);
   return(res);
-  // std::cout<<Lp;
-  // return(V);
 }
 
 
 cv::Mat AnisotropicDiffusion(const cv::Mat& I0){
-    int t = 100;
+    int t = 20;
     double lambda = 0.14;
     cv::Mat Ln,Ls,Le,Lw,I;
     cv::Mat Cn,Cs,Ce,Cw;
@@ -218,7 +216,7 @@ cv::Mat AnisotropicDiffusion(const cv::Mat& I0){
 }
 
 int main(int argc, char** argv){
-    cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_UNCHANGED);
+    cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_GRAYSCALE);
     image.convertTo(image,CV_32F);
     image = image/255;
     std::cout<<type2str(image.type())<<"\n";

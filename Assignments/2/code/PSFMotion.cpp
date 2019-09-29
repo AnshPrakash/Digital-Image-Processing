@@ -1,9 +1,24 @@
 #include <opencv2/opencv.hpp>
 #include <bits/stdc++.h>
 
+
 std::default_random_engine generator;
 
-cv::Mat Blur(cv::Mat& M,cv::Mat ker);
+cv::Mat GaussianNoise(float mean,float variance,int M,int N){
+    cv::Mat L(M,N,CV_32F);
+    // std::default_random_engine generator;
+    std::normal_distribution<float> distribution(mean,variance);
+    float randn = distribution(generator);
+    for(int i = 0;i < L.rows; i++){
+        for(int j = 0; j < L.cols; j++){
+            randn = distribution(generator);
+            L.at<float>(i,j) = fabs(randn);
+        }
+    }
+    return(L);
+}
+
+
 // imshow(winname, mat) -> None
 // . The function may scale the image, depending on its depth:
 // . - If the image is 8-bit unsigned, it is displayed as is.
@@ -137,6 +152,7 @@ float gaussfunc(float sigma, double x , double x0 , double y ,double y0){
     double val = 0;
     return(exp(-((x-x0)*(x-x0)+(y-y0)*(y - y0))/(2*sigma*sigma) ));
 }
+
 bool comp(int a, int b){ 
     return (a < b); 
 } 
@@ -160,6 +176,7 @@ cv::Mat idker(){
   ker.at<float>(1,1) = 1;
   return(ker);
 }
+
 void dftImage(const cv::Mat& G,cv::Mat& complexI){
     int m = cv::getOptimalDFTSize( G.rows );
     int n = cv::getOptimalDFTSize( G.cols );
@@ -190,49 +207,6 @@ void idftImage(const cv::Mat& G,cv::Mat& complexI){
 
 
 
-cv::Mat GaussianNoise(double mean,double variance,int M,int N){
-    cv::Mat L(M,N,CV_32F);
-    // std::default_random_engine generator;
-    std::normal_distribution<float> distribution(mean,variance);
-    float randn = distribution(generator);
-    for(int i = 0;i < L.rows; i++){
-        for(int j = 0; j < L.cols; j++){
-            randn = distribution(generator);
-            L.at<float>(i,j) = fabs(randn);
-        }
-    }
-    return(L);
-}
-
-cv::Mat SNR3(double mean,double stddev,int R,int C){
-  cv::Mat magF(cv::Size(C,R),CV_32F);
-  cv::Mat N = GaussianNoise(mean,stddev,R,C);
-  N.convertTo(N,CV_32F);
-  dftImage(N,N);
-  double alpha = 0.5*(0.94);
-  for(int u = 0; u < R; u++ ){
-    for(int v = 0; v < C; v++){
-      magF.at<float>(u,v) = (u*u + v*v);
-    }
-  }
-  cv::pow(magF,alpha,magF);
-  // showdft(N);
-  cv::Mat magN;
-  cv::Mat SpArr[2];
-  cv::split(N,SpArr);
-  cv::magnitude(SpArr[0],SpArr[1],magN);
-  magN = magN.mul(magN);
-  magF = magF.mul(magF);
-  // double k = 0.0134;//proportionality factor factor
-  cv::Mat snr = magF/(cv::mean(magN)[0]);
-  double val = cv::mean(magF)[0]/(cv::mean(magN)[0]);
-  std::cout<<val<<" :val\n";
-  std::vector<cv::Mat> vec;
-  vec.push_back(snr.clone());
-  vec.push_back(snr.clone());
-  cv::merge(vec,snr);
-  return(snr);
-}
 
 cv::Mat SNR2(const cv::Mat& I1,double mean,double stddev){
   cv::Mat I = I1.clone();
@@ -253,37 +227,13 @@ cv::Mat SNR2(const cv::Mat& I1,double mean,double stddev){
   magI = magI.mul(magI);
   double k = 0.0134;//proportionality factor factor
   double val = cv::mean(magI)[0]/(cv::mean(magN)[0]);
-  // std::cout<<val<<" : val\n";
+  std::cout<<val<<" : val\n";
   cv::Mat snr(cv::Size(magN.cols,magN.rows),CV_32FC2,cv::Scalar(val,val));
   return(snr);
 }
 
-cv::Mat SNR1(const cv::Mat& img,const cv::Mat& noise){
-  cv::Mat I = img.clone();
-  cv::Mat N = noise.clone();
-  I.convertTo(I,CV_32F);
-  N.convertTo(N,CV_32F);
-  dftImage(I,I);
-  dftImage(N,N);
-  // showdft(N);
-  cv::Mat magN,magI;
-  cv::Mat SpArr[2];
-  cv::split(N,SpArr);
-  cv::magnitude(SpArr[0],SpArr[1],magN);
-  cv::split(I,SpArr);
-  cv::magnitude(SpArr[0],SpArr[1],magI);
-  magN = magN.mul(magN);
-  magI = magI.mul(magI);
-  cv::Mat snr = magI/magN;
-  std::vector<cv::Mat> vec;
-  vec.push_back(snr.clone());
-  vec.push_back(snr.clone());
-  cv::merge(vec,snr);
-  return(snr);
-}
 
 cv::Mat WienerFilter(cv::Mat& H,const cv::Mat& G,const cv::Mat& r){
-  //conjugate
   // std::cout<<type2str(G.type())<<" \n";
   for(int u = 0; u < H.rows; u++){
       for(int v = 0; v < H.cols; v++){
@@ -318,12 +268,20 @@ cv::Mat wrap_WienerFilter(const cv::Mat& noise, cv::Mat& ker,cv::Mat& blurred,co
   cv::Mat dft_blurr;
   dftImage(blurred,dft_blurr);
   dftImage(padded_ker,H);
+  showdft(H);
   cv::Scalar mean,stddev;
   cv::meanStdDev(noise,mean,stddev);
-  cv::Mat K = 1.0/SNR3(mean[0],stddev[0],img.rows,img.cols);
+  // cv::Mat K = 1.0/SNR3(mean[0],stddev[0],img.rows,img.cols);
   // cv::Mat K = 1.0/SNR2(img,mean[0],stddev[0]);
+  float snr = 10.0;
+  cv::Mat K(cv::Size(H.cols,H.rows),CV_32FC2,cv::Scalar(snr,snr));
+  // std::cout<<K.channels()<<"channels\n";
+  // std::cout<<K.rows<<" "<<K.cols<<" channels\n";
+  // std::cout<<H.rows<<" "<<H.cols<<" channels\n";
+  K = 1.0/K;
+  
   // cv::Mat K = 1.0/SNR1(img,noise);
-
+  // std::cout<<dft_blurr.rows<<" "<<dft_blurr.cols<<" channels\n";
   cv::Mat filtered = WienerFilter(H,dft_blurr,K);
   return(filtered);
 }
@@ -335,6 +293,7 @@ cv::Mat Blur(cv::Mat& M,cv::Mat ker){
   ker.copyTo(padded_ker(cv::Rect(0,0, ker.cols,ker.rows)));
   dftImage(M,fft_M);
   dftImage(padded_ker,fft_ker);
+  showdft(fft_ker);
   cv::Mat fft_G;
   cv::mulSpectrums(fft_M,fft_ker,fft_G,false);
   cv::Mat G;
@@ -342,32 +301,75 @@ cv::Mat Blur(cv::Mat& M,cv::Mat ker){
   return(G);
 }
 
+cv::Mat motionKer(double len, double theta ){
+  if((int)len%2==0) len = len + 1;
+  int sz = 50;
+  cv::Mat ker(cv::Size2d(sz,sz),CV_32F,cv::Scalar(0));
+  int c = (sz)/2;
+  double x = c;
+  double y = c;
+  cv::Point2d p1(x,y);
+  x = x + len*cos(theta);
+  y = y + len*sin(theta);
+  cv::Point2d p2(x,y);
+  cv::line(ker,p1,p2,cv::Scalar(1),1);
+  ker = ker/(cv::sum(ker)[0]);
+  return(ker);
+}
+
 int main(int argc, char** argv){
+  //Shan
+  //snr = 50.0
+  // cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_GRAYSCALE);
+  // image.convertTo(image,CV_32F);
+  // image = image/255;
+  // // cv::resize(image,image,cv::Size(26,26));
+  // std::cout<<type2str(image.type())<<"\n";
+  // std::cout<< image.size()<<"\n";
+  // cv::Mat ker = motionKer(3.50,6.0);//snr = 50.0 for shan
+  // // std::cout<<ker;
+  
+  // // cv::Mat ker = idker();
+  // cv::Mat noise(image.rows,image.cols,CV_32F,cv::Scalar(0));
+
+  // // cv::Mat blurred  = Blur(image,ker);
+
+  // cv::Mat filtered = wrap_WienerFilter(noise,ker,image,image);
+  
+  // cv::namedWindow( "Original",CV_WINDOW_FREERATIO);
+  // cv::imshow( "Original",image);
+
+  // cv::namedWindow( "filtered",CV_WINDOW_FREERATIO);
+  // cv::imshow( "filtered",filtered);
+
+  // cv::namedWindow( "Kernel",CV_WINDOW_FREERATIO);
+  // cv::imshow( "Kernel",ker*10);
+  /////////////////////////////////////////////////////
   cv::Mat image = cv::imread(argv[1],CV_LOAD_IMAGE_GRAYSCALE);
   image.convertTo(image,CV_32F);
   image = image/255;
   // cv::resize(image,image,cv::Size(26,26));
   std::cout<<type2str(image.type())<<"\n";
   std::cout<< image.size()<<"\n";
+  cv::Mat ker = motionKer(12.50,5.0);
+  // std::cout<<ker;
+  
   // cv::Mat ker = idker();
-  cv::Mat ker = gaussKer(5);
-  cv::Mat blurred = Blur(image,ker);
-  cv::Mat noise = GaussianNoise(0.0,0.0001,blurred.rows,blurred.cols);
-  // std::cout<<noise<<"\n=========================================================================================\n";
-  blurred = blurred + noise;
-  cv::Mat filtered = wrap_WienerFilter(noise,ker,blurred,image);
+  cv::Mat noise(image.rows,image.cols,CV_32F,cv::Scalar(0));
 
-  // cv::filter2D(image,blurred,CV_32F,gaussKer(2,3));
+  // cv::Mat blurred  = Blur(image,ker);
 
+  cv::Mat filtered = wrap_WienerFilter(noise,ker,image,image);
+  
   cv::namedWindow( "Original",CV_WINDOW_FREERATIO);
   cv::imshow( "Original",image);
 
-  cv::namedWindow( "Blurred",CV_WINDOW_FREERATIO);
-  cv::imshow( "Blurred",blurred);
-
-
   cv::namedWindow( "filtered",CV_WINDOW_FREERATIO);
   cv::imshow( "filtered",filtered);
+
+  cv::namedWindow( "Kernel",CV_WINDOW_FREERATIO);
+  cv::imshow( "Kernel",ker*10);
+
 
   cv::waitKey(0); 
   cv::destroyAllWindows();	
