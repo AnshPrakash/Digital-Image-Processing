@@ -94,8 +94,34 @@ def recInversetransform(X,level):
 
 
 
-img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
-img = img/255.0
+def scaleMat(X):
+  maxE = np.amax(X)
+  minE = np.amin(X)
+  if (maxE - minE == 0):
+    return(X/255.0) #just a choice
+  return((X - minE)/(maxE - minE))
+
+
+def displayable(X,level):
+  size = min(X.shape[1],X.shape[0])
+  if(size == 1 or level == 0):
+    return(scaleMat(X))
+  l = splitM(X)
+  for i in range(1,4):
+    l[i] = scaleMat(l[i])
+  return(recombine(displayable(l[0],level-1),l[1],l[2],l[3]))
+
+
+
+def visualise(X,level):
+  Y = displayable(X,level)
+  cv2.imshow('visualise Haar',Y)
+  cv2.waitKey(0)
+  cv2.destroyAllWindows()
+
+# img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
+# img = img/255.0
+
 
 
 # Wavelet transform of image, and plot approximation and details
@@ -121,9 +147,9 @@ img = img/255.0
 # cv2.waitKey(0)
 # cv2.destroyAllWindows()
 
-trans =  recTransform(img,8)
-trans =  recInversetransform(trans,8)
-cv2.imshow('haar',trans)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+# trans =  recTransform(img,8)
+# trans =  recInversetransform(trans,8)
+# cv2.imshow('haar',trans)
+# cv2.waitKey(0)
+# cv2.destroyAllWindows()
 
