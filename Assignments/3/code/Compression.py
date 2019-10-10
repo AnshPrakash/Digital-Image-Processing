@@ -33,9 +33,15 @@ def runlengthencoding(l):
   return(x)
 
 def expand(l):
-  x = []
+  sum = 0
   for y in l:
-    x = x + y[0]*[y[1]]
+    sum = sum + y[0]
+  x = [0]*sum
+  idx = 0
+  for y in l:
+    for _ in range(int(y[0])):
+      x[idx] = y[1]
+      idx = idx + 1
   return(x)
 
 def compress(img,levels,k):
@@ -88,19 +94,48 @@ def deCompress(X):
 
 
 
-img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
-img = img/255.0
-k = float(sys.argv[2])/100.0
-levels = 4
+img3g = cv2.imread(sys.argv[1],cv2.IMREAD_UNCHANGED)
+img3g = img3g/255.0
+images = cv2.split(img3g)
+compressed_img = []
+for img in images:
+  print(img.shape)
+  k = float(sys.argv[2])/100.0
+  levels = 3
+  comp = compress(img,levels,k)
+  compressed_img.append(comp)
 
-comp = compress(img,levels,k)
-compressed = deCompress(comp)
+recons = []
+sizeOfCompres = 0
+for comp in compressed_img:
+  sizeOfCompres = sizeOfCompres + (comp.size * comp.itemsize)
+  compressed = deCompress(comp)
+  recons.append(compressed)
 
-print("%d bytes" % (img.size * img.itemsize))
-print("%d bytes" % (comp.size * comp.itemsize))
 
-cv2.imshow('Original',img)
-cv2.imshow('After Compression',compressed)
+print("%d bytes" % (img3g.size * img3g.itemsize))
+print("%d bytes" % (sizeOfCompres))
+
+
+
+recons = cv2.merge(recons)
+
+# img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
+# print(img.shape)
+# img = img/255.0
+# k = float(sys.argv[2])/100.0
+# levels = 3
+# comp = compress(img,levels,k)
+# compressed = deCompress(comp)
+
+# print("%d bytes" % (img.size * img.itemsize))
+# print("%d bytes" % (comp.size * comp.itemsize))
+print("SNR: ",SNR(img3g,recons),"dB")
+cv2.imshow('Original',img3g)
+cv2.imshow('After Compression',recons)
+
+# cv2.imwrite('Org.png',img3g*255)
+# cv2.imwrite('Compressed.png',recons*255)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
 

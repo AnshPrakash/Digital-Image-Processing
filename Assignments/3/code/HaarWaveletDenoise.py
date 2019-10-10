@@ -2,6 +2,7 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import cv2
+
   
 '''
   All Images are of power of 2
@@ -118,6 +119,11 @@ def visualise(X,level):
   cv2.imshow('visualise Haar',Y)
   cv2.waitKey(0)
   cv2.destroyAllWindows()
+
+
+def SNR(org,img):
+  snr = 10*np.log10(np.amax(img**2,axis = None)/np.mean((org-img)**2,axis = None))
+  return(snr)
 
 # img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
 # img = img/255.0

@@ -32,18 +32,30 @@ def GaussNoise(m,n,mean,std):
 
 
 
-img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
-img = img/255.0
+img3g = cv2.imread(sys.argv[1],cv2.IMREAD_UNCHANGED)
+img3g = img3g/255.0
+# img = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
+images = cv2.split(img3g)
+nimg = []
+procs = []
+for img in images:
+  img = img + GaussNoise(img.shape[0],img.shape[1],0.0,0.1)
+  levels = 2
+  trans =  recTransform(img,levels)
+  visualise(trans,levels)
+  trans = recthersholding(trans,levels,True,0.2)
+  visualise(trans,levels)
+  proc =  recInversetransform(trans,levels)
+  nimg.append(img)
+  procs.append(proc)
 
-img = img + GaussNoise(img.shape[0],img.shape[1],0.0,0.1)
-levels = 2
-trans =  recTransform(img,levels)
-visualise(trans,levels)
-trans = recthersholding(trans,levels,False,0.3)
-visualise(trans,levels)
-proc =  recInversetransform(trans,levels)
-cv2.imshow('Noised',img)
-cv2.imshow('Noise reduced',proc)
+nimg = cv2.merge(nimg)
+proimg = cv2.merge(procs)
+
+print("SNR of Noisy image ",SNR(img3g,nimg),"dB")
+print("SNR after processing : ",SNR(img3g,proimg),"dB")
+cv2.imshow('Noised',nimg)
+cv2.imshow('Noise reduced',proimg)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
 
