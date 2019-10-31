@@ -40,7 +40,7 @@ for line in lines:
       y1 = int(y0 + 1000*(a))
       x2 = int(x0 - 1000*(-b))
       y2 = int(y0 - 1000*(a))
-      # cv2.line(img,(x1,y1),(x2,y2),(255,0,0),2)
+      cv2.line(img,(x1,y1),(x2,y2),(255,0,0),2)
 
 angle = 90 - (np.median(thetas))*(180/3.14)
 

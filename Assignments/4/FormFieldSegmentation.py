@@ -67,6 +67,7 @@ visualMarks = visulalizeMarker(markers)
 print(ret)
 
 # print(img.dtype)
+# print(markers.dtype)
 # print(sure_fg.dtype)
 # markers = markers + 1
 seg = cv2.watershed(img,markers)
