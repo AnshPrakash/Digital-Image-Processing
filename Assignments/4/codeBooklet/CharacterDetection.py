@@ -60,12 +60,12 @@ closing = cv2.morphologyEx(intersect, cv2.MORPH_CLOSE, kernel,iterations = 1)
 _,contours,_ = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 
 
-epsilon = 0.1
+epsilon = 0.5
 error_peri = 1
 
 conts_im = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 # conts_im = cv2.findContours(closing,cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE) 
-print(conts_im)
+# print(conts_im)
 cnts_im = imutils.grab_contours(conts_im)
 mask_im = np.ones(img.shape[:2], dtype="uint8") 
 
@@ -76,15 +76,15 @@ for i in range(0, len(contours)):
   cnt = contours[i]
   area = cv2.contourArea(cnt)
   perimeter = cv2.arcLength(cnt,True)
-  if area > 1:
+  if area > 150:
     rect = cv2.minAreaRect(cnt)
     (x, y), (width, height), angle = rect
     aspect_ratio = min(width, height) / max(width, height)
     peri_area = perimeter/area
     if ((1 - aspect_ratio) < epsilon) or not (peri_area < 1):
       continue
-    print(aspect_ratio)
-    print(peri_area)
+    print(1 -aspect_ratio)
+    print("p",peri_area)
     box = cv2.boxPoints(rect)
     box = np.int0(box)
     cv2.drawContours(mask_im, [cnts_im[i]], -1, 0, -1)
