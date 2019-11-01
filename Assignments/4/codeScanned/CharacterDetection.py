@@ -3,7 +3,7 @@ import cv2
 import sys
 import imutils
 
-mser = cv2.MSER_create()
+mser = cv2.MSER_create(_delta = 16,_max_area=400,_min_area = 60,_min_diversity = 50,_edge_blur_size=1)
 
 def visulalizeMarker(markers):
   marks = np.copy(markers)
@@ -60,7 +60,7 @@ closing = cv2.morphologyEx(intersect, cv2.MORPH_CLOSE, kernel,iterations = 1)
 _,contours,_ = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 
 
-epsilon = 0.5
+epsilon = 0.6
 error_peri = 1
 
 conts_im = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
@@ -97,6 +97,7 @@ for i in range(0, len(contours)):
 
 
 FinalResult = FinalResult*mask_im
+# FinalResult = cv2.morphologyEx(FinalResult, cv2.MORPH_CLOSE, kernel,iterations = 2)
 ret, markers = cv2.connectedComponents(FinalResult)
 visualMarks = visulalizeMarker(markers)
 

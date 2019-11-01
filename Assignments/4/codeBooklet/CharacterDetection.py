@@ -3,7 +3,14 @@ import cv2
 import sys
 import imutils
 
-mser = cv2.MSER_create()
+# mser = cv2.MSER_create(_delta = 1,_max_area=1500,_min_area = 90,_max_variation = 0.03,_min_diversity = 10,_edge_blur_size=1)
+mser = cv2.MSER_create(_delta = 2,_max_area=1900,_min_area = 30,_max_variation = 0.2)
+
+
+def binarize(img):
+  mask = cv2.adaptiveThreshold(img,255,cv2.ADAPTIVE_THRESH_MEAN_C,cv2.THRESH_BINARY,151,-5)
+  return(mask)
+
 
 def visulalizeMarker(markers):
   marks = np.copy(markers)
@@ -24,7 +31,13 @@ blurred = cv2.bilateralFilter(gray,kbsize,sigI,sigS)
 blurred = cv2.bilateralFilter(gray,kbsize,sigI,sigS)
 edges = cv2.Canny(blurred,60,130)
 
-
+kernel = np.ones((3,3),np.uint8)
+remover = binarize(blurred)
+remover = cv2.morphologyEx(remover, cv2.MORPH_OPEN, kernel,iterations = 5)
+remover =  cv2.dilate(remover,kernel,iterations=6)
+edges = edges*(remover/255)
+edges = edges.astype(np.uint8)
+# remover =  cv2.erode(remover,kernel,iterations=3)
 
 vis = img.copy()
 mask = np.zeros((img.shape[0], img.shape[1], 1), dtype=np.uint8)
@@ -60,7 +73,7 @@ closing = cv2.morphologyEx(intersect, cv2.MORPH_CLOSE, kernel,iterations = 1)
 _,contours,_ = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
 
 
-epsilon = 0.5
+epsilon = 0.55
 error_peri = 1
 
 conts_im = cv2.findContours(closing,cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE) 
@@ -97,6 +110,7 @@ for i in range(0, len(contours)):
 
 
 FinalResult = FinalResult*mask_im
+FinalResult = cv2.morphologyEx(FinalResult, cv2.MORPH_CLOSE, kernel,iterations = 1)
 ret, markers = cv2.connectedComponents(FinalResult)
 visualMarks = visulalizeMarker(markers)
 
@@ -108,6 +122,7 @@ cv2.imwrite('Morpho.jpg',closing)
 cv2.imwrite('Visualize.jpg',visualMarks)
 cv2.imwrite('Detect_FalsePositive.jpg',mask_im*255)
 cv2.imwrite('FinalResult.jpg',FinalResult)
+cv2.imwrite('Remover.jpg',remover)
 
 
 
