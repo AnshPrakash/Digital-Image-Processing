@@ -110,7 +110,7 @@ for i in range(0, len(contours)):
 
 
 FinalResult = FinalResult*mask_im
-FinalResult = cv2.morphologyEx(FinalResult, cv2.MORPH_CLOSE, kernel,iterations = 1)
+# FinalResult = cv2.morphologyEx(FinalResult, cv2.MORPH_CLOSE, kernel,iterations = 1)
 ret, markers = cv2.connectedComponents(FinalResult)
 visualMarks = visulalizeMarker(markers)
 

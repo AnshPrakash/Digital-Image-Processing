@@ -86,6 +86,13 @@ cv2.imshow("Segmentations",seg)
 
 
 
+
+# cv2.imwrite("Original.jpg",img)
+# cv2.imwrite("visualize Markers.jpg",visualMarks)
+# cv2.imwrite("Segmentations.jpg",seg)
+
+
+
 # cv2.imshow("Segmentes",seg)
 
 

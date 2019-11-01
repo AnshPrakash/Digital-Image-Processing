@@ -51,6 +51,9 @@ cv2.imshow("Edges",edges)
 cv2.imshow("Original",img)
 cv2.imshow("Rotated",rotated)
 
+# cv2.imwrite("Original.jpg",img)
+# cv2.imwrite("Rotated.jpg",rotated)
+
 
 cv2.waitKey(0)
 cv2.destroyAllWindows()
