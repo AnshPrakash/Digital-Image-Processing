@@ -4,6 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utils import *
 
+Nangles = 3
+size = 3
+sigma = 1
+Levels = 3
 
 def getcdf(im):
   cdf = [0]*256
@@ -27,21 +31,7 @@ def matchHistogram(im1,im2):
   return(img)
 
 
-def gausianKernel(size,sigma,Nangles):
-  angles = [ i*(3.14/Nangles) for i in range(Nangles+1)]
-  cols = [np.array(list(range(size))) - (size-1)/2.0 for _ in range(size)]
-  cols = np.array(cols)
-  rows = np.copy(cols).T
-  g = -np.exp(-(cols*cols + rows*rows)/2*sigma*sigma)/(2*3.14*(sigma**4))
-  gx = rows*g
-  gy = cols*g
-  ga = [np.cos(alp)*gx + np.sin(alp)*gy for alp in angles]
-  return(ga)
-
-
-
-
-
+kernels = gausianKernel(size,sigma,Nangles)
 
 def steerablePyramids(img,levels,x=[]):
   if levels <= 0 or img.shape[0]==1 or img.shape[1] == 1:
@@ -55,15 +45,14 @@ def steerablePyramids(img,levels,x=[]):
 
 
 
+
+
+
+
 img1 = cv2.imread(sys.argv[1],cv2.IMREAD_GRAYSCALE)
 img2 = cv2.imread(sys.argv[2],cv2.IMREAD_GRAYSCALE)
 
-Nangles = 3
-size = 3
-sigma = 1
-kernels = gausianKernel(size,sigma,Nangles)
 
-Levels = 3
 pyr = steerablePyramids(img1,Levels)
 pyr.reverse()
 
